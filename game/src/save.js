@@ -9,7 +9,7 @@ export function loadSave() {
     if (typeof s !== 'object' || s === null) return null;
     return {
       cash: Math.max(0, s.cash | 0),
-      missionIndex: Math.max(0, Math.min(5, s.missionIndex | 0)),
+      missionIndex: Math.max(0, Math.min(6, s.missionIndex | 0)),
       missionsDone: Math.max(0, s.missionsDone | 0),
       carsStolen: Math.max(0, s.carsStolen | 0),
       bestCash: Math.max(0, s.bestCash | 0),

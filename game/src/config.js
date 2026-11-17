@@ -30,9 +30,26 @@ export const PALETTE = {
   buildingWall: ['#d9d4c5', '#cdb89a', '#b7c4ce', '#e8dcc8', '#c9b8a3'],
   glass: '#9fd8e8',
   downtown: ['#5d6d7e', '#7d8597', '#4a6fa5', '#6c757d'],
+  // Flat warehouse roofs for the industrial east, warm stucco for the beach
+  // front, brick reds for the old town west.
+  industrial: ['#6b6f75', '#7a6a58', '#5f6b5a', '#8a7a5f'],
+  beach: ['#f4a261', '#e9c46a', '#f7ede2', '#ee9b7a'],
+  oldtown: ['#b5543c', '#c96f4a', '#a85438', '#d08a5a'],
   tree: '#4d7c4f',
   treeLight: '#6a9e5f',
+  palm: '#3e7d44',
+  palmLight: '#7fb069',
 };
+
+// Districts: named areas with their own look. Rects are in world coordinates;
+// the first match wins, so order them from most specific to most general.
+export const DISTRICTS = [
+  { id: 'downtown', name: 'Downtown', x: 750, y: 450, w: 1000, h: 700, ground: 'rgba(90,110,140,0.10)', label: 'DOWNTOWN', lx: 1250, ly: 950 },
+  { id: 'industrial', name: 'Old Cannery', x: 1850, y: 450, w: 750, h: 1050, ground: 'rgba(70,70,66,0.16)', label: 'OLD CANNERY', lx: 2225, ly: 975 },
+  { id: 'beach', name: 'Marina del Sol', x: 0, y: 1500, w: 2600, h: 420, ground: 'rgba(233,216,166,0.22)', label: 'MARINA DEL SOL', lx: 1300, ly: 1560 },
+  { id: 'oldtown', name: 'Old Town', x: 0, y: 0, w: 650, h: 1500, ground: 'rgba(180,120,70,0.08)', label: 'OLD TOWN', lx: 325, ly: 950 },
+  { id: 'residential', name: 'Verde Bay', x: 0, y: 0, w: WORLD_W, h: WORLD_H, ground: null, label: 'VERDE BAY', lx: 0, ly: 0 },
+];
 
 // Car models: name, size, top speed (px/s), accel, handling, colour pool.
 export const CAR_MODELS = {

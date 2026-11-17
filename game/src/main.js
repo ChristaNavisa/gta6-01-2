@@ -47,7 +47,7 @@ const restartBtn = document.getElementById('restart');
 const muteBtn = document.getElementById('mute');
 const save = loadSave();
 if (!save) continueBtn.style.display = 'none';
-else continueBtn.textContent = `Continue — $${save.cash} · Job ${Math.min(save.missionIndex + 1, 5)}/5`;
+else continueBtn.textContent = `Continue — $${save.cash} · Job ${Math.min(save.missionIndex + 1, 6)}/6`;
 
 function startPlaying(fromSave) {
   S.flags.menu = false;

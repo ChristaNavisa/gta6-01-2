@@ -1,13 +1,28 @@
 // Verde Bay: a deterministic grid city — roads, blocks, buildings, parks, beach.
 // The layout is generated from the seed so every run of the same seed matches.
-import { WORLD_W, WORLD_H, ROAD_X, ROAD_Y, ROAD_W, BEACH_Y, WATER_Y, PALETTE, PLACES } from './config.js';
+import { WORLD_W, WORLD_H, ROAD_X, ROAD_Y, ROAD_W, BEACH_Y, WATER_Y, PALETTE, PLACES, DISTRICTS } from './config.js';
 import { makeRng, range, rangeInt, pick, chance, clamp } from './random.js';
+
+// Which district a point belongs to (first matching rect wins).
+export function districtAt(x, y) {
+  for (const d of DISTRICTS) {
+    if (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) return d.id;
+  }
+  return 'residential';
+}
+
+export function districtNameAt(x, y) {
+  const id = districtAt(x, y);
+  const d = DISTRICTS.find((v) => v.id === id);
+  return d ? d.name : 'Verde Bay';
+}
 
 export function generateCity(seed) {
   const rng = makeRng(seed);
   const buildings = [];
   const parks = [];
   const trees = [];
+  const palms = [];
   const lamps = [];
 
   // Blocks are the rectangles between neighbouring roads.
@@ -21,7 +36,9 @@ export function generateCity(seed) {
       const y1 = ys[bj + 1] - ROAD_W / 2 - 14;
       if (x1 - x0 < 60 || y1 - y0 < 60) continue;
       const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-      const downtown = cx > 750 && cx < 1750 && cy > 450 && cy < 1150;
+      const district = districtAt(cx, cy);
+      const downtown = district === 'downtown';
+      const industrial = district === 'industrial';
       const roll = rng();
       if (roll < 0.14) {
         // A park: grass, trees, a path.
@@ -30,9 +47,10 @@ export function generateCity(seed) {
         for (let i = 0; i < n; i++) trees.push({ x: range(rng, x0 + 14, x1 - 14), y: range(rng, y0 + 14, y1 - 14), r: range(rng, 9, 15) });
         continue;
       }
-      // 1-4 buildings per block, with a margin for sidewalk.
-      const cols = (x1 - x0) > 170 && chance(rng, 0.6) ? 2 : 1;
-      const rows = (y1 - y0) > 170 && chance(rng, 0.5) ? 2 : 1;
+      // 1-4 buildings per block, with a margin for sidewalk. Industrial blocks
+      // hold one big flat warehouse instead of several small houses.
+      const cols = industrial ? 1 : ((x1 - x0) > 170 && chance(rng, 0.6) ? 2 : 1);
+      const rows = industrial ? 1 : ((y1 - y0) > 170 && chance(rng, 0.5) ? 2 : 1);
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
           const bw = (x1 - x0) / cols - 18;
@@ -41,18 +59,36 @@ export function generateCity(seed) {
           const bx = x0 + c * ((x1 - x0) / cols) + 9;
           const by = y0 + r * ((y1 - y0) / rows) + 9;
           const tall = downtown && chance(rng, 0.55);
+          const roofPool = tall ? PALETTE.downtown
+            : district === 'industrial' ? PALETTE.industrial
+            : district === 'beach' ? PALETTE.beach
+            : district === 'oldtown' ? PALETTE.oldtown
+            : PALETTE.buildingRoof;
           buildings.push({
             x: bx, y: by, w: bw, h: bh,
-            roof: pick(rng, tall ? PALETTE.downtown : PALETTE.buildingRoof),
-            wall: pick(rng, PALETTE.buildingWall),
+            roof: pick(rng, roofPool),
+            wall: pick(rng, industrial ? ['#9a8f80', '#8a8a84', '#a39a8b'] : PALETTE.buildingWall),
             tall,
-            floors: tall ? rangeInt(rng, 4, 9) : rangeInt(rng, 1, 3),
+            district,
+            // Warehouses get a smokestack on the roof.
+            stack: industrial && chance(rng, 0.6),
+            floors: tall ? rangeInt(rng, 4, 9) : industrial ? 1 : district === 'oldtown' ? rangeInt(rng, 1, 2) : rangeInt(rng, 1, 3),
             windows: rangeInt(rng, 2, 5),
           });
         }
       }
-      if (chance(rng, 0.7)) trees.push({ x: range(rng, x0 + 10, x1 - 10), y: range(rng, y0 + 10, y1 - 10), r: range(rng, 8, 13) });
+      // Palms cluster on beach blocks; old town gets extra shade trees.
+      if (district === 'beach') {
+        const n = rangeInt(rng, 3, 6);
+        for (let i = 0; i < n; i++) palms.push({ x: range(rng, x0 + 14, x1 - 14), y: range(rng, y0 + 14, y1 - 14), r: range(rng, 9, 13) });
+      }
+      if (chance(rng, district === 'oldtown' ? 0.9 : 0.7)) trees.push({ x: range(rng, x0 + 10, x1 - 10), y: range(rng, y0 + 10, y1 - 10), r: range(rng, 8, 13) });
     }
+  }
+
+  // Palm-lined promenade along the beach.
+  for (let x = 80; x < WORLD_W; x += 130) {
+    if (chance(rng, 0.75)) palms.push({ x: x + range(rng, -20, 20), y: BEACH_Y - 24 + range(rng, -6, 6), r: range(rng, 10, 14) });
   }
 
   // Street lamps along the main avenues.
@@ -63,7 +99,8 @@ export function generateCity(seed) {
 
   return {
     w: WORLD_W, h: WORLD_H,
-    buildings, parks, trees, lamps,
+    buildings, parks, trees, palms, lamps,
+    districts: DISTRICTS,
     places: { ...PLACES },
   };
 }

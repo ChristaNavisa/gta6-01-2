@@ -54,6 +54,15 @@ export const MISSIONS = [
       { type: 'escape', text: 'Lose the cops and reach the marina boat' },
     ],
   },
+  {
+    id: 'harbor-heist', title: 'Harbor Heist', reward: 3500,
+    briefing: "Mara's last play: the cannery safe holds the Vipers' cut. Crack it, grab the cash, and run for the boat at the marina — the whole VBPD will be on you.",
+    stages: [
+      { type: 'goto', target: 'warehouse', text: 'Get to the Old Cannery' },
+      { type: 'grab', target: 'warehouse', text: 'Crack the safe — stay by the vault' },
+      { type: 'escape', text: 'Lose the cops and reach the marina boat' },
+    ],
+  },
 ];
 
 export function createMissionState() {
@@ -110,7 +119,7 @@ function beginStage(S) {
   if (def.id === 'getaway' && stage.type === 'driveTo') {
     commitCrime(S, 1.5, 600);
   }
-  if (def.id === 'big-score' && stage.type === 'grab') {
+  if ((def.id === 'big-score' || def.id === 'harbor-heist') && stage.type === 'grab') {
     commitCrime(S, 2, 600);
   }
 }
@@ -190,7 +199,7 @@ export function updateMission(S, dt) {
       break;
     }
     case 'escape': {
-      const finalTarget = def.id === 'big-score' ? S.city.places.marina : S.city.places.stadium;
+      const finalTarget = (def.id === 'big-score' || def.id === 'harbor-heist') ? S.city.places.marina : S.city.places.stadium;
       M.marker = { x: finalTarget.x, y: finalTarget.y, label: finalTarget.name };
       if (S.wanted.level === 0 && dist(px, py, finalTarget.x, finalTarget.y) < 70) advance();
       else if (S.wanted.level > 0) M.objective = 'Lose the cops, then reach the marker';

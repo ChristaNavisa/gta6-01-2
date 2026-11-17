@@ -18,7 +18,9 @@ export function applyShot(S, name) {
 
   if (name === 'drive') {
     // Cole in a Comet GT on the main avenue, traffic and pedestrians around.
-    const car = makeCar('sport', 1100, 800, 0, '#e74c3c', 'player');
+    // Staged west: the pre-roll throttle + live coast carry the car ~1800px
+    // east, so it must start near the west edge to stay on camera.
+    const car = makeCar('sport', 500, 800, 0, '#e74c3c', 'player');
     car.speed = 300;
     S.cars.push(car);
     p.car = car; p.onFoot = false; p.x = car.x; p.y = car.y;
@@ -31,16 +33,18 @@ export function applyShot(S, name) {
 
   if (name === 'chase') {
     // Wanted 3 stars, two interceptors closing in, mission objective on the HUD.
-    const car = makeCar('muscle', 1400, 800, 0, '#922b21', 'player');
+    // Staged west for the same reason as 'drive': the pre-roll + live coast
+    // carry everything far east, so the chase must start near the west edge.
+    const car = makeCar('muscle', 600, 800, 0, '#922b21', 'player');
     car.speed = 380;
     S.cars.push(car);
     p.car = car; p.onFoot = false; p.x = car.x; p.y = car.y;
     S.wanted.level = 3;
     S.wanted.heat = 3;
     S.wanted.decayAt = S.time + 9999;
-    const cop1 = makeCar('police', 1400 - 260, 800 - 16, 0, '#1a1a2e', 'police');
+    const cop1 = makeCar('police', 600 - 260, 800 - 16, 0, '#1a1a2e', 'police');
     cop1.speed = 400; cop1.driver = true;
-    const cop2 = makeCar('police', 1400 - 420, 800 + 16, 0, '#1a1a2e', 'police');
+    const cop2 = makeCar('police', 600 - 420, 800 + 16, 0, '#1a1a2e', 'police');
     cop2.speed = 410; cop2.driver = true;
     S.cars.push(cop1, cop2);
     S.mission.active = true;
@@ -53,22 +57,26 @@ export function applyShot(S, name) {
   }
 
   if (name === 'mission') {
-    // On foot at the Old Cannery: Vipers in the open, peds fleeing, objective up.
+    // On foot at the Old Cannery: the Harbor Heist safe-crack, Vipers guarding,
+    // wanted stars up, objective on the HUD.
     p.onFoot = true;
     p.car = null;
-    p.x = 2000 - 260; p.y = 1130 - 60;
+    p.x = 2000 - 100; p.y = 1130 - 100;
     p.ammo = 48;
     const wh = S.city.places.warehouse;
-    for (let i = 0; i < 5; i++) {
-      const g = makePed(S.rng, S.city, wh.x - 60 + (i % 3) * 46, wh.y - 30 + Math.floor(i / 3) * 60, 'gang');
+    for (let i = 0; i < 2; i++) {
+      const g = makePed(S.rng, S.city, wh.x - 40 + i * 50, wh.y + 40, 'gang');
       S.peds.push(g);
     }
+    S.wanted.level = 2;
+    S.wanted.heat = 2;
+    S.wanted.decayAt = S.time + 9999;
     S.mission.active = true;
-    S.mission.index = 3;
+    S.mission.index = 5;
     S.mission.stage = 1;
-    S.mission.objective = 'Take out the Vipers (0/5)';
+    S.mission.objective = 'Crack the safe — stay by the vault';
     S.mission.marker = { x: wh.x, y: wh.y, label: 'Old Cannery' };
-    S.mission.data = { gang: S.peds.filter((x) => x.kind === 'gang') };
+    S.mission.data = {};
     S.camera.x = p.x + 60; S.camera.y = p.y;
     S.camera.snap = true;
   }

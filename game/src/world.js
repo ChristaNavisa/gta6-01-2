@@ -109,7 +109,7 @@ export function update(S, dt) {
   const input = S.input;
 
   // Auto-start the next mission a few seconds after the last one.
-  if (!S.mission.active && S.mission.index < 5 && S.time > (S.mission.nextAt || 0.6)) {
+  if (!S.mission.active && S.mission.index < 6 && S.time > (S.mission.nextAt || 0.6)) {
     startMission(S, S.mission.index);
   }
 

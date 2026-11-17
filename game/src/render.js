@@ -1,5 +1,5 @@
 // Canvas rendering for Verde Bay: city, cars, people, effects and warm sunlight.
-import { WORLD_W, WORLD_H, ROAD_X, ROAD_Y, ROAD_W, BEACH_Y, WATER_Y, PALETTE } from './config.js';
+import { WORLD_W, WORLD_H, ROAD_X, ROAD_Y, ROAD_W, BEACH_Y, WATER_Y, PALETTE, DISTRICTS } from './config.js';
 import { clamp } from './random.js';
 
 function rr(ctx, x, y, w, h, r) {
@@ -27,6 +27,8 @@ export function render(S) {
   drawParks(S, ctx);
   drawBuildings(S, ctx);
   drawTrees(S, ctx);
+  drawPalms(S, ctx);
+  drawDistrictLabels(S, ctx);
   drawSkids(S, ctx);
   drawMarker(S, ctx);
   drawCars(S, ctx);
@@ -44,6 +46,12 @@ export function render(S) {
 function drawGround(S, ctx) {
   ctx.fillStyle = PALETTE.ground;
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+  // District ground tints: each area of town reads differently at a glance.
+  for (const d of DISTRICTS) {
+    if (!d.ground) continue;
+    ctx.fillStyle = d.ground;
+    ctx.fillRect(d.x, d.y, d.w, d.h);
+  }
   // Beach and sea along the south edge.
   ctx.fillStyle = PALETTE.sand;
   ctx.fillRect(0, BEACH_Y, WORLD_W, WATER_Y - BEACH_Y);
@@ -130,6 +138,50 @@ function drawBuildings(S, ctx) {
       ctx.fillStyle = 'rgba(255,255,255,0.18)';
       ctx.fillRect(b.x + 4, b.y + 4, b.w - 8, 10);
     }
+    if (b.stack) {
+      // Chimney on the warehouse roof corner, with a slow smoke puff.
+      ctx.fillStyle = '#5a5a5a';
+      ctx.fillRect(b.x + b.w - 22, b.y + 6, 12, 26);
+      ctx.fillStyle = '#3d3d3d';
+      ctx.fillRect(b.x + b.w - 22, b.y + 6, 12, 5);
+      const puff = 1 + Math.sin(S.time * 1.2 + b.x * 0.05) * 0.3;
+      ctx.fillStyle = 'rgba(220,220,220,0.35)';
+      ctx.beginPath(); ctx.arc(b.x + b.w - 16, b.y - 6 - Math.sin(S.time * 0.8 + b.x) * 4, 9 * puff, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+function drawPalms(S, ctx) {
+  for (const p of S.city.palms) {
+    // Trunk, leaning slightly, and a crown of fronds.
+    ctx.strokeStyle = '#8d6e63';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y + p.r);
+    ctx.quadraticCurveTo(p.x + 4, p.y, p.x + 8, p.y - p.r - 6);
+    ctx.stroke();
+    ctx.fillStyle = PALETTE.palm;
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + (i - 2) * 0.55;
+      ctx.beginPath();
+      ctx.ellipse(p.x + 8 + Math.cos(a) * p.r, p.y - p.r - 6 + Math.sin(a) * p.r * 0.7, p.r * 0.9, p.r * 0.32, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = PALETTE.palmLight;
+    ctx.beginPath(); ctx.arc(p.x + 8, p.y - p.r - 6, p.r * 0.35, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawDistrictLabels(S, ctx) {
+  // Small painted district names on the ground — the city reads as places,
+  // not a uniform grid, without shouting over the action.
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 40px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  for (const d of S.city.districts) {
+    if (d.id === 'residential') continue;
+    ctx.fillText(d.label, d.lx, d.ly);
   }
 }
 

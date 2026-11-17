@@ -1,5 +1,6 @@
 // HUD: DOM readouts (stars, cash, health, objective, speed, messages) + minimap.
 import { ROAD_X, ROAD_Y, ROAD_W, WORLD_W, WORLD_H, BEACH_Y } from './config.js';
+import { districtNameAt } from './city.js';
 
 export function createHud(doc) {
   return {
@@ -10,6 +11,7 @@ export function createHud(doc) {
     ammo: doc.getElementById('ammo'),
     objective: doc.getElementById('objective'),
     speed: doc.getElementById('speed'),
+    district: doc.getElementById('district'),
     message: doc.getElementById('message'),
     minimap: doc.getElementById('minimap'),
     last: {},
@@ -38,11 +40,14 @@ export function updateHud(S) {
   const arPct = Math.round(p.armor);
   if (hud.last.ar !== arPct) { hud.last.ar = arPct; hud.armorBar.style.width = arPct + '%'; }
 
-  const obj = S.mission.active ? S.mission.objective : (S.mission.index >= 5 ? 'All jobs done — Verde Bay is yours.' : 'Head to Mara\'s Garage to start the next job.');
+  const obj = S.mission.active ? S.mission.objective : (S.mission.index >= 6 ? 'All jobs done — Verde Bay is yours.' : 'Head to Mara\'s Garage to start the next job.');
   setText(hud.objective, 'obj', hud, obj);
 
   const spd = p.car ? Math.round(Math.abs(p.car.speed) * 0.12) : Math.round(p.speed * 0.12);
   setText(hud.speed, 'speed', hud, p.car ? `${spd} mph · ${p.car.name}` : (p.moving ? 'On foot' : ''));
+  const px = p.car ? p.car.x : p.x;
+  const py = p.car ? p.car.y : p.y;
+  setText(hud.district, 'district', hud, `📍 ${districtNameAt(px, py)}`);
 
   if (S.messageT > 0) {
     setText(hud.message, 'msg', hud, S.message);
@@ -68,6 +73,11 @@ function drawMinimap(S) {
   ctx.fillRect(0, BEACH_Y * sy, mw, mh - BEACH_Y * sy);
   ctx.fillStyle = '#e9d8a6';
   ctx.fillRect(0, (BEACH_Y - 20) * sy, mw, 20 * sy);
+  // District tints so the map reads as places, not just roads.
+  const mmTint = { downtown: 'rgba(74,111,165,0.40)', industrial: 'rgba(122,106,88,0.40)', beach: 'rgba(233,196,106,0.35)', oldtown: 'rgba(181,84,60,0.32)' };
+  for (const d of S.city.districts) {
+    if (mmTint[d.id]) { ctx.fillStyle = mmTint[d.id]; ctx.fillRect(d.x * sx, d.y * sy, d.w * sx, d.h * sy); }
+  }
   // Roads.
   ctx.fillStyle = '#5a6068';
   for (const rx of ROAD_X) ctx.fillRect(rx * sx - 1, 0, 3, mh);
