@@ -1,0 +1,39 @@
+/* VERDE BAY — HUD and menu styling. Sunset palette, no web fonts, no network. */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1b1e26; font-family: 'Segoe UI', system-ui, sans-serif; }
+#game { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); z-index: 5; }
+#top-left { position: absolute; top: 14px; left: 16px; }
+#cash { font-size: 28px; font-weight: 800; color: #7dff8a; letter-spacing: 1px; }
+#hpwrap, #armorwrap { width: 170px; height: 10px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); border-radius: 5px; margin-top: 6px; overflow: hidden; }
+#armorwrap { height: 6px; }
+#hpbar { height: 100%; width: 100%; background: linear-gradient(90deg, #2ec4b6, #7dff8a); }
+#armorbar { height: 100%; width: 0%; background: linear-gradient(90deg, #4361ee, #4cc9f0); }
+#ammo { margin-top: 6px; font-size: 15px; font-weight: 700; }
+#top-right { position: absolute; top: 14px; right: 16px; text-align: right; }
+#stars { font-size: 26px; letter-spacing: 3px; color: #ffd166; }
+#stars.hot { color: #ff595e; animation: pulse 0.7s infinite alternate; }
+@keyframes pulse { from { opacity: 1; } to { opacity: 0.55; } }
+#speed { font-size: 16px; font-weight: 700; margin-top: 4px; }
+#objective { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); border: 1px solid #ffd166; border-radius: 6px; padding: 8px 16px; font-size: 15px; font-weight: 600; max-width: 46vw; text-align: center; }
+#message { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.65); border-radius: 6px; padding: 8px 14px; font-size: 14px; max-width: 52vw; text-align: center; transition: opacity .4s; }
+#minimap { position: absolute; left: 16px; bottom: 16px; border: 2px solid rgba(255,255,255,.65); border-radius: 6px; background: #20242e; }
+#hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .75; background: rgba(0,0,0,.5); padding: 5px 10px; border-radius: 5px; }
+
+.overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10, 12, 24, 0.72); z-index: 10; }
+.overlay .panel { max-width: 620px; width: 90%; background: linear-gradient(160deg, #2b2d42, #1b1e26); border: 2px solid #ffd166; border-radius: 14px; padding: 30px 36px; text-align: center; color: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.overlay h1 { margin: 0; font-size: 52px; letter-spacing: 6px; color: #ffd166; text-shadow: 0 3px 0 #b5838d, 0 6px 18px rgba(0,0,0,.6); }
+.overlay h2 { margin: 2px 0 10px; font-size: 20px; letter-spacing: 4px; color: #ff8fa3; font-weight: 600; }
+.overlay .tagline { font-size: 16px; color: #e0e0e0; margin: 6px 0 12px; }
+.overlay .story { font-size: 14px; line-height: 1.55; color: #cfcfcf; }
+.overlay .buttons { margin: 18px 0 8px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.overlay button { pointer-events: auto; cursor: pointer; font-size: 16px; font-weight: 700; padding: 11px 22px; border-radius: 8px; border: none; background: #ffd166; color: #1b1e26; transition: transform .08s, background .15s; }
+.overlay button:hover { background: #ffe08a; transform: translateY(-2px); }
+.overlay button:active { transform: translateY(0); }
+#howto { display: none; text-align: left; font-size: 13.5px; line-height: 1.6; background: rgba(0,0,0,.35); border-radius: 8px; padding: 12px 16px; margin-top: 12px; color: #e8e8e8; }
+.overlay .foot { font-size: 11.5px; color: #9a9a9a; margin-top: 14px; }
+.overlay.red .panel { border-color: #ff595e; }
+.overlay.red h1 { color: #ff595e; text-shadow: 0 3px 0 #7f1d1d, 0 6px 18px rgba(0,0,0,.6); }
+.overlay.blue .panel { border-color: #4361ee; }
+.overlay.blue h1 { color: #4cc9f0; text-shadow: 0 3px 0 #1d3557, 0 6px 18px rgba(0,0,0,.6); }
