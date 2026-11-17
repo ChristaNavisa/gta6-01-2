@@ -1,35 +1,41 @@
-// Save / load through localStorage. Progress is cash + mission index + stats.
-// Same key and shape as the 2D version, so an old save carries over.
-const KEY = 'verdebay-save-v1';
+// VERDE BAY — save / load. One small JSON blob in localStorage:
+// the mission the player reached and the cash they hold.
 
+import { SAVE_KEY } from './config.js';
+
+function storage() {
+  if (typeof localStorage !== 'undefined') return localStorage;
+  return null;
+}
+
+/** The saved blob, or null when there is none / it is unreadable. */
 export function loadSave() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const s = storage();
+    if (!s) return null;
+    const raw = s.getItem(SAVE_KEY);
     if (!raw) return null;
-    const s = JSON.parse(raw);
-    if (typeof s !== 'object' || s === null) return null;
+    const data = JSON.parse(raw);
+    if (typeof data !== 'object' || data === null) return null;
     return {
-      cash: Math.max(0, s.cash | 0),
-      missionIndex: Math.max(0, Math.min(6, s.missionIndex | 0)),
-      missionsDone: Math.max(0, s.missionsDone | 0),
-      carsStolen: Math.max(0, s.carsStolen | 0),
-      bestCash: Math.max(0, s.bestCash | 0),
+      missionIndex: typeof data.missionIndex === 'number' ? data.missionIndex : 0,
+      cash: typeof data.cash === 'number' ? data.cash : 0,
     };
-  } catch { return null; }
+  } catch (e) {
+    return null;
+  }
 }
 
-export function writeSave(state) {
+/** Persist the current progress. Safe to call every mission completion. */
+export function writeSave(S) {
   try {
-    localStorage.setItem(KEY, JSON.stringify({
-      cash: Math.round(state.player.cash),
-      missionIndex: state.mission.index,
-      missionsDone: state.stats.missionsDone,
-      carsStolen: state.stats.carsStolen,
-      bestCash: state.stats.bestCash,
+    const s = storage();
+    if (!s) return;
+    s.setItem(SAVE_KEY, JSON.stringify({
+      missionIndex: S.stats.missionsDone,
+      cash: S.player.cash,
     }));
-  } catch { /* storage unavailable: play without saving */ }
-}
-
-export function clearSave() {
-  try { localStorage.removeItem(KEY); } catch {}
+  } catch (e) {
+    // Storage full or blocked: the game keeps running without a save.
+  }
 }

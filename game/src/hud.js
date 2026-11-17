@@ -1,144 +1,144 @@
-// VERDE BAY 3D — HUD: DOM readouts (stars, cash, health, objective, speed,
-// messages) + a 2D minimap, and floating cash popups projected from the
-// 3D world onto the screen.
-import { ROAD_X, ROAD_Y, WORLD_W, WORLD_H, BEACH_Y } from './config.js';
+// VERDE BAY — the HUD: cash, health, wanted stars, speed, district,
+// mission objective, and a live 2D minimap. Reads the sim state every
+// frame; never writes it.
+
 import { districtNameAt } from './city.js';
+import { MISSIONS, missionObjective } from './missions.js';
 
-export function createHud(doc) {
-  return {
-    stars: doc.getElementById('stars'),
-    cash: doc.getElementById('cash'),
-    hpBar: doc.getElementById('hpbar'),
-    armorBar: doc.getElementById('armorbar'),
-    ammo: doc.getElementById('ammo'),
-    objective: doc.getElementById('objective'),
-    speed: doc.getElementById('speed'),
-    district: doc.getElementById('district'),
-    message: doc.getElementById('message'),
-    minimap: doc.getElementById('minimap'),
-    floatLayer: doc.getElementById('floaters'),
-    last: {},
-    floaterEls: [],
+let el = null;
+let mm = null;
+
+export function initHUD() {
+  el = {
+    cash: document.getElementById('cash'),
+    hpFill: document.getElementById('hp-fill'),
+    stars: document.getElementById('stars'),
+    speed: document.getElementById('speed'),
+    carName: document.getElementById('car-name'),
+    district: document.getElementById('district'),
+    objective: document.getElementById('objective'),
+    prompt: document.getElementById('prompt'),
+    taxi: document.getElementById('taxi'),
   };
+  mm = document.getElementById('minimap');
 }
 
-function setText(el, key, hud, text) {
-  if (hud.last[key] !== text) { hud.last[key] = text; el.textContent = text; }
-}
-
-export function updateHud(S, R) {
-  const hud = S.hud;
-  if (!hud) return;
-  const p = S.player;
-  const w = S.wanted;
-
-  let stars = '';
-  for (let i = 0; i < 5; i++) stars += i < w.level ? '★' : '☆';
-  setText(hud.stars, 'stars', hud, stars);
-  hud.stars.className = 'stars' + (w.level > 0 ? ' hot' : '');
-
-  setText(hud.cash, 'cash', hud, `$${Math.round(p.cash).toLocaleString('en-US')}`);
-  setText(hud.ammo, 'ammo', hud, p.onFoot ? `🔫 ${p.ammo}` : '🚗');
-  const hpPct = Math.round((p.hp / 100) * 100);
-  if (hud.last.hp !== hpPct) { hud.last.hp = hpPct; hud.hpBar.style.width = hpPct + '%'; }
-  const arPct = Math.round(p.armor);
-  if (hud.last.ar !== arPct) { hud.last.ar = arPct; hud.armorBar.style.width = arPct + '%'; }
-
-  const obj = S.mission.active ? S.mission.objective : (S.mission.index >= 6 ? 'All jobs done — Verde Bay is yours.' : "Head to Mara's Garage to start the next job.");
-  setText(hud.objective, 'obj', hud, obj);
-
-  const spd = p.car ? Math.round(Math.abs(p.car.speed) * 0.12) : Math.round(p.speed * 0.12);
-  setText(hud.speed, 'speed', hud, p.car ? `${spd} mph · ${p.car.name}` : (p.moving ? 'On foot' : ''));
-  const px = p.car ? p.car.x : p.x;
-  const py = p.car ? p.car.y : p.y;
-  setText(hud.district, 'district', hud, `📍 ${districtNameAt(px, py)}`);
-
-  if (S.messageT > 0) {
-    setText(hud.message, 'msg', hud, S.message);
-    hud.message.style.opacity = '1';
-  } else {
-    hud.message.style.opacity = '0';
-  }
-
-  drawMinimap(S);
-  drawFloaters(S, R);
+function starRow(level) {
+  let s = '';
+  for (let i = 0; i < 5; i++) s += i < level ? '★' : '☆';
+  return s;
 }
 
 function drawMinimap(S) {
-  const cv = S.hud.minimap;
-  if (!cv) return;
-  const ctx = cv.getContext('2d');
-  const mw = cv.width, mh = cv.height;
-  const sx = mw / WORLD_W, sy = mh / WORLD_H;
-  ctx.clearRect(0, 0, mw, mh);
-  ctx.fillStyle = '#20242e';
-  ctx.fillRect(0, 0, mw, mh);
-  // Water + beach.
-  ctx.fillStyle = '#2b7fa3';
-  ctx.fillRect(0, BEACH_Y * sy, mw, mh - BEACH_Y * sy);
-  ctx.fillStyle = '#e9d8a6';
-  ctx.fillRect(0, (BEACH_Y - 20) * sy, mw, 20 * sy);
-  // District tints so the map reads as places, not just roads.
-  const mmTint = { downtown: 'rgba(74,111,165,0.40)', industrial: 'rgba(122,106,88,0.40)', beach: 'rgba(233,196,106,0.35)', oldtown: 'rgba(181,84,60,0.32)' };
-  for (const d of S.city.districts) {
-    if (mmTint[d.id]) { ctx.fillStyle = mmTint[d.id]; ctx.fillRect(d.x * sx, d.y * sy, d.w * sx, d.h * sy); }
-  }
+  if (!mm) return;
+  const g = mm.getContext('2d');
+  const W = mm.width; const H = mm.height;
+  const sx = W / 2600; const sy = H / 2000;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#141c2c';
+  g.fillRect(0, 0, W, H);
+  // Beach strip.
+  g.fillStyle = '#8a744a';
+  g.fillRect(0, 1500 * sy, W, H - 1500 * sy);
   // Roads.
-  ctx.fillStyle = '#5a6068';
-  for (const rx of ROAD_X) ctx.fillRect(rx * sx - 1, 0, 3, mh);
-  for (const ry of ROAD_Y) ctx.fillRect(0, ry * sy - 1, mw, 3);
-  // Buildings.
-  ctx.fillStyle = '#8a8f98';
-  for (const b of S.city.buildings) ctx.fillRect(b.x * sx, b.y * sy, Math.max(1.5, b.w * sx), Math.max(1.5, b.h * sy));
-  // Mission marker.
-  const m = S.mission.marker || (S.taxi && S.taxi.marker);
-  if (m) {
-    ctx.fillStyle = '#ffd166';
-    ctx.beginPath(); ctx.arc(m.x * sx, m.y * sy, 4, 0, Math.PI * 2); ctx.fill();
+  g.strokeStyle = '#4a4a58';
+  g.lineWidth = 2;
+  for (const x of S.city.roads.vertical) {
+    g.beginPath(); g.moveTo(x * sx, 0); g.lineTo(x * sx, H); g.stroke();
   }
-  // Police (red) and traffic (grey).
-  for (const c of S.cars) {
-    ctx.fillStyle = c.kind === 'police' ? '#ff2e2e' : '#c8c8c8';
-    ctx.fillRect(c.x * sx - 1.5, c.y * sy - 1.5, 3, 3);
+  for (const y of S.city.roads.horizontal) {
+    g.beginPath(); g.moveTo(0, y * sy); g.lineTo(W, y * sy); g.stroke();
+  }
+  // Buildings.
+  g.fillStyle = '#6a6a78';
+  for (const b of S.city.buildings) {
+    g.fillRect((b.x - b.w / 2) * sx, (b.y - b.d / 2) * sy, Math.max(1, b.w * sx), Math.max(1, b.d * sy));
+  }
+  // Taxi fare.
+  if (S.taxi.state === 'waiting' && S.taxi.customer) {
+    g.fillStyle = '#ffd21a';
+    g.beginPath(); g.arc(S.taxi.customer.x * sx, S.taxi.customer.y * sy, 4, 0, Math.PI * 2); g.fill();
+  }
+  if (S.taxi.state === 'riding' && S.taxi.dest) {
+    g.fillStyle = '#7dff8a';
+    g.beginPath(); g.arc(S.taxi.dest.x * sx, S.taxi.dest.y * sy, 4, 0, Math.PI * 2); g.fill();
+  }
+  // Mission objective.
+  if (S.mission.active) {
+    const def = MISSIONS[S.mission.index];
+    const stage = def && def.stages[S.mission.stage];
+    let target = null;
+    if (stage) {
+      if (stage.type === 'steal' && S.mission.data.targetCar) {
+        target = S.mission.data.targetCar;
+      } else if (stage.target) {
+        target = S.city.places[stage.target];
+      }
+    }
+    if (target) {
+      const r = 4 + Math.sin(S.time * 5) * 1.5;
+      g.fillStyle = '#ffd21a';
+      g.beginPath(); g.arc(target.x * sx, target.y * sy, r, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // Cops.
+  g.fillStyle = '#ff4a3a';
+  for (const c of S.cops) {
+    const x = c.car ? c.car.x : (c.ped ? c.ped.x : 0);
+    const y = c.car ? c.car.y : (c.ped ? c.ped.y : 0);
+    g.beginPath(); g.arc(x * sx, y * sy, 2.5, 0, Math.PI * 2); g.fill();
   }
   // Player arrow.
   const p = S.player;
-  const ppx = p.car ? p.car.x : p.x;
-  const ppy = p.car ? p.car.y : p.y;
-  ctx.save();
-  ctx.translate(ppx * sx, ppy * sy);
-  ctx.rotate(p.car ? p.car.angle : p.angle);
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
-  ctx.restore();
+  g.save();
+  g.translate(p.x * sx, p.y * sy);
+  g.rotate(p.angle);
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.moveTo(7, 0); g.lineTo(-5, -4.5); g.lineTo(-5, 4.5);
+  g.closePath(); g.fill();
+  g.restore();
 }
 
-function drawFloaters(S, R) {
-  const hud = S.hud;
-  const layer = hud.floatLayer;
-  if (!layer) return;
-  // Reuse one div per live floater.
-  while (hud.floaterEls.length < S.floaters.length) {
-    const el = document.createElement('div');
-    el.className = 'floater';
-    layer.appendChild(el);
-    hud.floaterEls.push(el);
+export function updateHUD(S) {
+  if (!el) return;
+  const p = S.player;
+  if (el.cash) el.cash.textContent = '$' + p.cash.toLocaleString('en-US');
+  if (el.hpFill) el.hpFill.style.width = Math.max(0, p.hp) + '%';
+  if (el.stars) {
+    el.stars.textContent = starRow(S.wanted.level);
+    el.stars.classList.toggle('hot', S.wanted.level > 0);
   }
-  for (let i = 0; i < hud.floaterEls.length; i++) {
-    const el = hud.floaterEls[i];
-    if (i >= S.floaters.length || !R || !R.camera) {
-      el.style.display = 'none';
-      continue;
+  if (el.speed) {
+    const mph = p.car ? Math.round(Math.abs(p.car.speed) * 0.45) : 0;
+    el.speed.textContent = mph + ' mph';
+  }
+  if (el.carName) el.carName.textContent = p.car ? p.car.name : 'On foot';
+  if (el.district) el.district.textContent = districtNameAt(p.x, p.y);
+  if (el.objective) el.objective.textContent = missionObjective(S);
+  if (el.taxi) {
+    if (S.taxi.state === 'riding') el.taxi.textContent = '🚕 Fare aboard — follow the green dot';
+    else if (S.taxi.state === 'waiting') el.taxi.textContent = '🚕 Fare waiting — pick them up';
+    else el.taxi.textContent = '';
+  }
+  if (el.prompt) {
+    let text = '';
+    if (p.onFoot && !S.mission.active && S.stats.missionsDone < 6) {
+      const g = S.city.places.garage;
+      const d = Math.hypot(p.x - g.x, p.y - g.y);
+      if (d < 120) text = 'Press E to start the next job';
+      else {
+        let best = null; let bestD = 55 * 55;
+        for (const car of S.cars) {
+          const dd = (car.x - p.x) ** 2 + (car.y - p.y) ** 2;
+          if (dd < bestD) { best = car; bestD = dd; }
+        }
+        if (best) text = 'Press E to enter the ' + best.name;
+      }
+    } else if (!p.onFoot) {
+      text = 'Press E to get out';
     }
-    const f = S.floaters[i];
-    const v = new window.THREE.Vector3(f.x, 14, -f.y).project(R.camera);
-    if (v.z > 1) { el.style.display = 'none'; continue; }
-    const vw = window.innerWidth, vh = window.innerHeight;
-    el.style.display = 'block';
-    el.style.left = `${((v.x + 1) / 2) * vw}px`;
-    el.style.top = `${((-v.y + 1) / 2) * vh - 20}px`;
-    el.style.opacity = String(Math.min(1, f.life));
-    el.style.color = f.color;
-    if (el.textContent !== f.text) el.textContent = f.text;
+    el.prompt.textContent = text;
   }
+  drawMinimap(S);
 }

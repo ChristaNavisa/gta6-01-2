@@ -1,46 +1,64 @@
-// Keyboard + mouse state, kept as one object the loop polls each frame.
+// VERDE BAY — keyboard + mouse input. One shared state object:
+// keys (held), justPressed (edge-triggered, cleared each frame by the
+// main loop), and the mouse position for aiming.
+
 export function createInput() {
-  return {
+  const input = {
     keys: new Set(),
-    mouseX: 0, mouseY: 0,           // screen pixels, relative to the canvas
-    mouseDown: false,
-    clicked: false,                  // consumed by the game each frame
-    justPressed: new Set(),          // keys pressed since last frame
-    anyKey: false,
+    justPressed: new Set(),
+    mouse: { x: 0, y: 0, down: false },
+    attached: false,
   };
-}
 
-export function attachInput(input, canvas) {
-  window.addEventListener('keydown', (e) => {
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
-    if (!e.repeat) input.justPressed.add(e.code);
-    input.keys.add(e.code);
-    input.anyKey = true;
-  });
-  window.addEventListener('keyup', (e) => input.keys.delete(e.code));
-  window.addEventListener('blur', () => { input.keys.clear(); input.mouseDown = false; });
-  canvas.addEventListener('mousemove', (e) => {
-    const r = canvas.getBoundingClientRect();
-    input.mouseX = e.clientX - r.left;
-    input.mouseY = e.clientY - r.top;
-  });
-  canvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) { input.mouseDown = true; input.clicked = true; }
-  });
-  window.addEventListener('mouseup', (e) => { if (e.button === 0) input.mouseDown = false; });
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-}
+  const KEYMAP = {
+    KeyW: 'up', ArrowUp: 'up',
+    KeyS: 'down', ArrowDown: 'down',
+    KeyA: 'left', ArrowLeft: 'left',
+    KeyD: 'right', ArrowRight: 'right',
+    KeyE: 'enter',
+    Space: 'brake',
+    Escape: 'pause',
+    Enter: 'confirm',
+  };
 
-export function endFrameInput(input) {
-  input.justPressed.clear();
-  input.clicked = false;
-}
+  /** Wire listeners to the page. Call once. */
+  input.attach = function attach() {
+    if (input.attached) return;
+    input.attached = true;
+    window.addEventListener('keydown', (e) => {
+      const k = KEYMAP[e.code];
+      if (k) {
+        if (!e.repeat) input.justPressed.add(k);
+        input.keys.add(k);
+        if (k === 'brake' || k === 'up' || k === 'down') e.preventDefault();
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      const k = KEYMAP[e.code];
+      if (k) input.keys.delete(k);
+    });
+    window.addEventListener('blur', () => input.keys.clear());
+    window.addEventListener('mousemove', (e) => {
+      input.mouse.x = e.clientX;
+      input.mouse.y = e.clientY;
+    });
+    window.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      input.mouse.down = true;
+      input.mouse.x = e.clientX;
+      input.mouse.y = e.clientY;
+      input.justPressed.add('shoot');
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) input.mouse.down = false;
+    });
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+  };
 
-export function keyDown(input, codes) {
-  for (const c of codes) if (input.keys.has(c)) return true;
-  return false;
-}
-export function keyPressed(input, codes) {
-  for (const c of codes) if (input.justPressed.has(c)) return true;
-  return false;
+  /** Call at the end of every frame: edge triggers live for one frame. */
+  input.endFrame = function endFrame() {
+    input.justPressed.clear();
+  };
+
+  return input;
 }

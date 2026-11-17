@@ -1,86 +1,81 @@
-// Deterministic screenshot staging: ?shot=start|drive|chase|mission&seed=1
-// Each shot places the world in a readable, system-rich pose and then lets
-// the normal loop run, so the frame is a real render of the game in motion.
-// The 3D camera follows the player, so the staged pose must start with the
-// player where the camera will find them — no long pre-roll coast needed.
-import { startMission } from './missions.js';
+// VERDE BAY — screenshot poses. The shots script loads index.html with
+// ?shot=<mode>&seed=1; main.js calls poseShot() once, then renders.
+// Each pose puts the game in a state that shows a different system:
+// the menu over the city, driving, a police chase, a mission on foot.
 
-export function applyShot(S, name) {
+import { makeCar, update } from './sim.js';
+import { startMission } from './missions.js';
+import { angleTo, dist } from './util.js';
+
+const STEP = 1 / 60;
+
+function stepN(S, n) { for (let i = 0; i < n; i++) update(S, STEP); }
+
+function putInCar(S, car) {
   const p = S.player;
-  if (name === 'start') {
+  p.car = car;
+  p.onFoot = false;
+  p.x = car.x; p.y = car.y; p.angle = car.angle;
+  car.owner = 'player';
+}
+
+/** Pose the game for one of the four screenshots. */
+export function poseShot(S, mode) {
+  const p = S.player;
+  if (mode === 'start') {
+    // Menu over a living city: traffic and peds move behind the panel.
     S.flags.menu = true;
+    S.flags.started = false;
     return;
   }
+
   S.flags.menu = false;
   S.flags.started = true;
 
-  if (name === 'drive') {
-    // Cole in a Comet GT on the main avenue, traffic and pedestrians around.
-    const car = S.makeCar('sport', 500, 800, 0, '#e74c3c', 'player');
-    car.speed = 300;
+  if (mode === 'drive') {
+    startMission(S, 1); // Courier Run: "Pick up the package at Sunset Diner"
+    const car = makeCar('sports', 1170, 650, Math.PI / 2, '#d23b2e', 'player');
+    car.speed = 130;
     S.cars.push(car);
-    p.car = car; p.onFoot = false; p.x = car.x; p.y = car.y;
-    startMission(S, 0);
-    S.mission.objective = 'Deliver the package to the Palmera Diner';
-    S.mission.marker = { x: 800, y: 1430, label: 'Palmera Diner' };
-    S.cameraSnap = true;
+    putInCar(S, car);
+    return;
   }
 
-  if (name === 'chase') {
-    // Wanted 3 stars, two interceptors closing in, mission objective on the HUD.
-    const car = S.makeCar('muscle', 600, 800, 0, '#922b21', 'player');
-    car.speed = 380;
+  if (mode === 'chase') {
+    startMission(S, 4); // Getaway Driver: "Drive to Verde Bowl"
+    const car = makeCar('sports', 1170, 910, -Math.PI / 2, '#d23b2e', 'player');
+    car.speed = 210;
     S.cars.push(car);
-    p.car = car; p.onFoot = false; p.x = car.x; p.y = car.y;
+    putInCar(S, car);
+    S.wanted.heat = 90;
     S.wanted.level = 3;
-    S.wanted.heat = 3;
-    S.wanted.decayAt = S.time + 9999;
-    const cop1 = S.makeCar('police', 600 - 260, 800 - 16, 0, '#1a1a2e', 'police');
-    cop1.speed = 400; cop1.driver = true;
-    const cop2 = S.makeCar('police', 600 - 420, 800 + 16, 0, '#1a1a2e', 'police');
-    cop2.speed = 410; cop2.driver = true;
-    S.cars.push(cop1, cop2);
-    S.mission.active = true;
-    S.mission.index = 1;
-    S.mission.stage = 1;
-    S.mission.objective = 'Drive the client to the Verde Bowl — lose the cops';
-    S.mission.marker = { x: 2300, y: 500, label: 'Verde Bowl' };
-    S.cameraSnap = true;
-  }
-
-  if (name === 'mission') {
-    // On foot at the Old Cannery: the Harbor Heist safe-crack, Vipers guarding,
-    // wanted stars up, objective on the HUD.
-    // Cole stands ON the 2000 avenue facing north toward the cannery — the
-    // old pose (1900, 1030) was inside the warehouse footprint, so the
-    // camera saw him standing "on" its roof. Gang members guard the avenue.
-    p.onFoot = true;
-    p.car = null;
-    p.x = 2000; p.y = 1200;
-    p.angle = -Math.PI / 2;
-    p.ammo = 48;
-    const wh = S.city.places.warehouse;
-    for (let i = 0; i < 2; i++) {
-      S.peds.push(S.makePed(i === 0 ? 1978 : 2022, 1160, 'gang'));
+    // Two interceptors closing in from behind.
+    for (const [x, y] of [[1170, 910 + 190], [1130, 910 + 280]]) {
+      const cop = makeCar('police', x, y, -Math.PI / 2, '#1e3a5f', 'police');
+      cop.speed = 260;
+      S.cars.push(cop);
+      S.cops.push({ car: cop, kind: 'cop', catchTimer: 0 });
     }
-    S.wanted.level = 2;
-    S.wanted.heat = 2;
-    S.wanted.decayAt = S.time + 9999;
-    S.mission.active = true;
-    S.mission.index = 5;
-    S.mission.stage = 1;
-    S.mission.objective = 'Crack the safe — stay by the vault';
-    S.mission.marker = { x: wh.x, y: wh.y, label: 'Old Cannery' };
-    S.mission.data = {};
-    S.cameraSnap = true;
+    return;
   }
 
-  if (name === 'end') {
-    // Game-over screen pose: wasted at the hospital steps.
-    p.hp = 0;
-    S.flags.wasted = true;
-    S.flags.wastedT = 0;
-    S.flags.menu = false;
-    S.flags.started = true;
+  if (mode === 'mission') {
+    startMission(S, 2); // Payback: goto the club, then the gang shows up
+    const club = S.city.places.club;
+    p.x = club.x; p.y = club.y + 60;
+    p.onFoot = true; p.car = null;
+    stepN(S, 90); // walk the goto stage forward so the gang spawns
+    const gang = (S.mission.data && S.mission.data.gang) || [];
+    if (gang.length > 0) {
+      const g0 = gang[0];
+      p.x = g0.x - 130; p.y = g0.y + 40;
+      p.angle = angleTo(p.x, p.y, g0.x, g0.y);
+      S.aimAngle = p.angle;
+    }
+    return;
   }
+
+  // Unknown mode: just start the game.
+  S.flags.menu = false;
+  S.flags.started = true;
 }

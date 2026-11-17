@@ -4,72 +4,67 @@
 [![rank](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-An original open-world crime game in the spirit of GTA 6, built for the
-[make.fun gta6-01 bounty](https://make.fun/bounty/gta6-01). Everything in it —
-the city, the characters, the cars, the story, the art and the sounds — is
-invented for this game. No Rockstar names, maps, characters or assets.
+An open-world crime game in the spirit of GTA 6, built in three.js. One
+driver, six jobs, and a whole city that wants him caught.
 
-## The game
+## The story
 
 Cole Vega came back to Verde Bay broke. Mara Voss, the fixer who runs the
 garage on 5th, has work — if Cole can drive, steal, and disappear faster
-than the VBPD can catch him.
+than the VBPD can catch him. Six jobs, $9,000 on the table, ending with
+the Harbor Heist.
 
-- **A city to explore** — Verde Bay: downtown towers, the Palmera Diner,
-  the Old Cannery, the Verde Bowl stadium, and the Marina del Sol beach,
-  on foot and by car.
-- **Traffic and pedestrians** — cars follow the avenues, walkers use the
-  sidewalks, and both scatter when things go loud.
-- **Steal and drive** — any parked or passing car is yours. Press E to
-  take it. A Comet GT, a Torro muscle car, a cab, a van — each drives
-  differently.
-- **Wanted level** — steal in view of the law, hit a pedestrian, or fire
-  a shot and the stars rise. Interceptors chase and ram; foot cops try
-  to arrest you. Lose them to cool off.
-- **Five story jobs** — from a first package run to the Verde Bay Bank
-  job, with a getaway, a hot car, and a payback in between. Plus taxi
-  fares on the side.
-- **Combat** — a pistol, rival Vipers who shoot back, and a city that
-  reacts.
-- **HUD with minimap** — wanted stars, health, cash, ammo, speed, the
-  mission objective, and a live minimap with police and marker dots.
-- **Save** — progress (cash, jobs, stats) saves to localStorage.
-- **Sound** — engine hum, sirens, gunshots and jingles, all synthesised
-  with WebAudio. No audio files, no network.
+## The city
 
-## How to play
+Verde Bay is a 2600×2000 open world with five districts: Downtown's towers,
+the Industrial harbor with its cannery and smokestacks, the Beach with its
+45 palms and the Marina del Sol, brick Oldtown, and the residential north
+around the Verde Bowl stadium. Traffic cruises the grid, pedestrians walk
+the sidewalks, and the sun sets over the water.
 
-Open `game/index.html` in desktop Chrome (serve `game/` with any static
-server, e.g. `node serve.ts`). Keyboard + mouse:
+## What you can do
 
-- **WASD** walk / drive, **Shift** sprint, **Space** handbrake
-- **E** enter or exit a car
-- **Mouse** aim, **click** shoot
-- **Esc** pause, **M** mute
+- **Drive and steal** — any car on the street is yours if you can take it.
+  The Comet GT is the fastest thing in the city; the VBPD's Torro
+  interceptors are almost as fast.
+- **Wanted level 1–5** — steal, shoot, or pull a job and the police come:
+  interceptors that ram, foot cops that drag you in.
+- **Six story missions** — First Wheels, Courier Run, Payback, The Big
+  Score, Getaway Driver, and the Harbor Heist ($3,500).
+- **Combat** — mouse aim, click to shoot; gang members shoot back.
+- **Taxi fares** — pick up a fare, drop them off, pocket the cash.
+- **HUD + minimap** — cash, health, wanted stars, speed, district, and a
+  live minimap with the objective, the cops, and your taxi fare.
+- **Save** — progress saves after every job; continue from the menu.
 
-## Structure
+## Controls
 
-- `game/src/main.js` — bootstrap, loop, menus
-- `game/src/world.js` — game state and the per-frame update
-- `game/src/city.js` — deterministic city generation (roads, blocks, parks, beach)
-- `game/src/player.js` — on-foot movement, car theft, shooting
-- `game/src/vehicles.js` — arcade car physics and traffic AI
-- `game/src/pedestrians.js` — sidewalk walkers, fleeing, gang fighters
-- `game/src/police.js` — wanted heat, police spawns, chases, arrests
-- `game/src/missions.js` — the five-job story arc and taxi fares
-- `game/src/render.js` — canvas rendering and sunlight
-- `game/src/hud.js` — HUD readouts and the minimap
-- `game/src/effects.js` — particles, skid marks, floating text
-- `game/src/audio.js` — synthesised WebAudio effects
-- `game/src/input.js`, `game/src/random.js`, `game/src/save.js`, `game/src/shots.js` — input, seeded RNG, saves, screenshot staging
-- `main.ts` — the entry program: copies `game/` + `screenshots/` to `/output` and writes `dossier.json`
+| Key | Action |
+| --- | --- |
+| WASD | Walk / drive |
+| E | Get in or out of a car; start the next job at Mara's Garage |
+| Mouse | Aim (click to shoot) |
+| Space | Brake |
+| Esc | Pause |
 
-## Screenshots
+## Play it
 
-The four screenshots in `screenshots/` are real renders of the game in
-headless Chrome, taken deterministically with `?seed=1`:
+```sh
+node serve.ts
+# open http://localhost:8080
+```
 
-1. `1-start.jpg` — title screen (`?shot=start&seed=1`)
-2. `2-drive.jpg` — driving the Comet GT down the avenue (`?shot=drive&seed=1`)
-3. `3-chase.jpg` — three-star chase with interceptors on your tail (`?shot=chase&seed=1`)
-4. `4-mission.jpg` — the Old Cannery payback, on foot (`?shot=mission&seed=1`)
+No build step, no network: `game/` is plain static files, three.js r160
+vendored under `game/vendor/`.
+
+## How it's built
+
+- `game/src/city.js` — the seeded city: districts, roads, named places
+- `game/src/sim.js` — the simulation: driving, traffic, peds, police, combat, taxi
+- `game/src/render3d.js` — the three.js renderer: chase camera, shadows, marker
+- `game/src/missions.js` — the six jobs and their stages
+- `game/src/hud.js` — HUD + minimap
+- `game/src/audio.js` — synthesized engine, sirens, gunshots (WebAudio, no files)
+- `main.ts` — hands the game in: copies `game/` + `screenshots/` and writes the dossier
+
+Built for the [make.fun GTA 6 bounty](https://make.fun/bounty/gta6-01).
