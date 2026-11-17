@@ -1,4 +1,5 @@
 // Save / load through localStorage. Progress is cash + mission index + stats.
+// Same key and shape as the 2D version, so an old save carries over.
 const KEY = 'verdebay-save-v1';
 
 export function loadSave() {

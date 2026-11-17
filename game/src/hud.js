@@ -1,5 +1,7 @@
-// HUD: DOM readouts (stars, cash, health, objective, speed, messages) + minimap.
-import { ROAD_X, ROAD_Y, ROAD_W, WORLD_W, WORLD_H, BEACH_Y } from './config.js';
+// VERDE BAY 3D — HUD: DOM readouts (stars, cash, health, objective, speed,
+// messages) + a 2D minimap, and floating cash popups projected from the
+// 3D world onto the screen.
+import { ROAD_X, ROAD_Y, WORLD_W, WORLD_H, BEACH_Y } from './config.js';
 import { districtNameAt } from './city.js';
 
 export function createHud(doc) {
@@ -14,7 +16,9 @@ export function createHud(doc) {
     district: doc.getElementById('district'),
     message: doc.getElementById('message'),
     minimap: doc.getElementById('minimap'),
+    floatLayer: doc.getElementById('floaters'),
     last: {},
+    floaterEls: [],
   };
 }
 
@@ -22,7 +26,7 @@ function setText(el, key, hud, text) {
   if (hud.last[key] !== text) { hud.last[key] = text; el.textContent = text; }
 }
 
-export function updateHud(S) {
+export function updateHud(S, R) {
   const hud = S.hud;
   if (!hud) return;
   const p = S.player;
@@ -40,7 +44,7 @@ export function updateHud(S) {
   const arPct = Math.round(p.armor);
   if (hud.last.ar !== arPct) { hud.last.ar = arPct; hud.armorBar.style.width = arPct + '%'; }
 
-  const obj = S.mission.active ? S.mission.objective : (S.mission.index >= 6 ? 'All jobs done — Verde Bay is yours.' : 'Head to Mara\'s Garage to start the next job.');
+  const obj = S.mission.active ? S.mission.objective : (S.mission.index >= 6 ? 'All jobs done — Verde Bay is yours.' : "Head to Mara's Garage to start the next job.");
   setText(hud.objective, 'obj', hud, obj);
 
   const spd = p.car ? Math.round(Math.abs(p.car.speed) * 0.12) : Math.round(p.speed * 0.12);
@@ -57,6 +61,7 @@ export function updateHud(S) {
   }
 
   drawMinimap(S);
+  drawFloaters(S, R);
 }
 
 function drawMinimap(S) {
@@ -98,12 +103,42 @@ function drawMinimap(S) {
   }
   // Player arrow.
   const p = S.player;
-  const px = p.car ? p.car.x : p.x;
-  const py = p.car ? p.car.y : p.y;
+  const ppx = p.car ? p.car.x : p.x;
+  const ppy = p.car ? p.car.y : p.y;
   ctx.save();
-  ctx.translate(px * sx, py * sy);
+  ctx.translate(ppx * sx, ppy * sy);
   ctx.rotate(p.car ? p.car.angle : p.angle);
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
   ctx.restore();
+}
+
+function drawFloaters(S, R) {
+  const hud = S.hud;
+  const layer = hud.floatLayer;
+  if (!layer) return;
+  // Reuse one div per live floater.
+  while (hud.floaterEls.length < S.floaters.length) {
+    const el = document.createElement('div');
+    el.className = 'floater';
+    layer.appendChild(el);
+    hud.floaterEls.push(el);
+  }
+  for (let i = 0; i < hud.floaterEls.length; i++) {
+    const el = hud.floaterEls[i];
+    if (i >= S.floaters.length || !R || !R.camera) {
+      el.style.display = 'none';
+      continue;
+    }
+    const f = S.floaters[i];
+    const v = new window.THREE.Vector3(f.x, 14, -f.y).project(R.camera);
+    if (v.z > 1) { el.style.display = 'none'; continue; }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    el.style.display = 'block';
+    el.style.left = `${((v.x + 1) / 2) * vw}px`;
+    el.style.top = `${((-v.y + 1) / 2) * vh - 20}px`;
+    el.style.opacity = String(Math.min(1, f.life));
+    el.style.color = f.color;
+    if (el.textContent !== f.text) el.textContent = f.text;
+  }
 }

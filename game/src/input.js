@@ -2,7 +2,7 @@
 export function createInput() {
   return {
     keys: new Set(),
-    mouseX: 0, mouseY: 0,           // screen pixels
+    mouseX: 0, mouseY: 0,           // screen pixels, relative to the canvas
     mouseDown: false,
     clicked: false,                  // consumed by the game each frame
     justPressed: new Set(),          // keys pressed since last frame

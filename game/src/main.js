@@ -1,34 +1,36 @@
-// VERDE BAY — bootstrap, game loop, menus, and screenshot staging.
-// Entry point: game/index.html loads this as a module.
-import { createGame, applySave, update } from './world.js';
+// VERDE BAY 3D — bootstrap, game loop, menus, and screenshot staging.
+// Entry point: game/index.html loads this as a module. three.js arrives as
+// a classic script (vendor/three.min.js) before this module runs.
+import { createGame, applySave, update } from './sim.js';
 import { createInput, attachInput, endFrameInput, keyPressed } from './input.js';
 import { createHud, updateHud } from './hud.js';
-import { render } from './render.js';
+import { createRenderer, renderFrame, screenToGround } from './render3d.js';
 import { applyShot } from './shots.js';
 import { loadSave, writeSave, clearSave } from './save.js';
 import { setMuted, isMuted, sfx } from './audio.js';
-import { hashSeed } from './random.js';
-import { startMission } from './missions.js';
+import { hashSeed } from './util.js';
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
 
 const params = new URLSearchParams(location.search);
 const seed = hashSeed(params.get('seed') || 'verde-bay-1');
 const shotName = params.get('shot');
+const noShadow = params.has('noshadow');
 
 const S = createGame(seed);
-S.ctx = ctx;
 S.input = createInput();
 S.hud = createHud(document);
 attachInput(S.input, canvas);
 // Exposed for debugging and for the screenshot harness.
 window.__game = S;
 
+const R = createRenderer(S, canvas, { noShadow });
+S.renderer = R;
+
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   canvas.width = w; canvas.height = h;
-  S.view.w = w; S.view.h = h;
+  R.renderer.setSize(w, h, false);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -80,7 +82,8 @@ if (shotName) {
   if (shotName === 'start') menuEl.style.display = 'flex';
   // Let the staged scene run a couple of simulated seconds so cars, police
   // and pedestrians are mid-motion when the screenshot is taken. Driving
-  // shots hold the throttle so the car is actually moving.
+  // shots hold the throttle so the car is actually moving. The 3D camera
+  // follows the player, so the car stays framed while it drives.
   if (shotName !== 'start' && shotName !== 'end') {
     if (shotName === 'drive' || shotName === 'chase') S.input.keys.add('KeyW');
     for (let i = 0; i < 150; i++) update(S, 1 / 60);
@@ -108,9 +111,20 @@ function frame(now) {
     muteBtn.textContent = isMuted() ? '🔇 Sound off' : '🔊 Sound on';
   }
 
+  // Mouse aim: project the cursor onto the ground plane before the sim runs,
+  // so the player faces the cursor the same frame.
+  if (!S.flags.paused && S.player.onFoot) {
+    const aim = screenToGround(R, S, input.mouseX, input.mouseY, canvas.width, canvas.height);
+    if (aim) {
+      S.player.aimX = aim.x;
+      S.player.aimY = aim.y;
+      S.aimReady = true;
+    }
+  }
+
   if (!S.flags.paused) update(S, dt);
-  render(S);
-  updateHud(S);
+  renderFrame(R, S, dt);
+  updateHud(S, R);
 
   // Wasted / busted overlays.
   if (S.flags.wasted && !wastedShown) {
@@ -122,6 +136,9 @@ function frame(now) {
     bustedEl.style.display = 'flex';
     setTimeout(() => { bustedEl.style.display = 'none'; }, 3000);
   }
+
+  // The screenshot harness waits for a few real rendered frames.
+  if (R.frames >= 3) window.__ready = true;
 
   endFrameInput(input);
   requestAnimationFrame(frame);

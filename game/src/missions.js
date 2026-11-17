@@ -1,77 +1,29 @@
-// Story missions for Verde Bay: a five-job arc from errand driver to the big score,
-// plus a repeatable taxi side job. Every mission is real state the game plays.
-import { PLACES } from './config.js';
-import { range, pick, dist, clamp } from './random.js';
-import { makeCar } from './vehicles.js';
-import { makePed } from './pedestrians.js';
-import { commitCrime } from './player.js';
+// VERDE BAY 3D — the story: six jobs and the taxi side job.
+// The mission data lives in config.js; this file runs the stage machine.
+import { MISSIONS } from './config.js';
+import { dist } from './util.js';
+import { randomRoadPoint } from './city.js';
 import { sfx } from './audio.js';
-import { addFloater, spawnBurst } from './effects.js';
-import { randomRoadPoint, nearestRoadPoint } from './city.js';
 
-export const MISSIONS = [
-  {
-    id: 'first-job', title: 'First Job', reward: 300,
-    briefing: "Mara needs a package run. Pick it up at her garage and take it to the Palmera Diner. Keep it clean.",
-    stages: [
-      { type: 'goto', target: 'garage', text: 'Go to Mara\'s Garage' },
-      { type: 'pickup', target: 'garage', text: 'Pick up the package' },
-      { type: 'deliver', target: 'diner', text: 'Deliver the package to the Palmera Diner' },
-    ],
-  },
-  {
-    id: 'getaway', title: 'Getaway', reward: 600,
-    briefing: "A client of Mara's is hot. Pick him up at the diner, then get him to the Verde Bowl — the cops will be looking.",
-    stages: [
-      { type: 'goto', target: 'diner', text: 'Pick up the client at the diner' },
-      { type: 'driveTo', target: 'stadium', text: 'Drive the client to the Verde Bowl — lose the cops' },
-      { type: 'escape', text: 'Lose the cops' },
-    ],
-  },
-  {
-    id: 'hot-wheels', title: 'Hot Wheels', reward: 900,
-    briefing: "A Comet GT is parked at the marina, guarded by Vipers. Take the car — deal with the guards however you like — and bring it to the garage.",
-    stages: [
-      { type: 'goto', target: 'marina', text: 'Get to the marina' },
-      { type: 'steal', target: 'garage', text: 'Steal the Comet GT and bring it to the garage' },
-    ],
-  },
-  {
-    id: 'payback', title: 'Payback', reward: 1200,
-    briefing: "The Vipers hit one of Mara's drivers. Go to the Old Cannery and settle it. All of them.",
-    stages: [
-      { type: 'goto', target: 'warehouse', text: 'Go to the Old Cannery' },
-      { type: 'eliminate', target: 'warehouse', count: 5, text: 'Take out the Vipers (0/5)' },
-      { type: 'escapeArea', target: 'warehouse', text: 'Get clear of the cannery' },
-    ],
-  },
-  {
-    id: 'big-score', title: 'The Big Score', reward: 2500,
-    briefing: "The Verde Bay Bank, Friday, 5pm. Grab the cash, then run for the boat at the marina. This is the one, Cole.",
-    stages: [
-      { type: 'goto', target: 'bank', text: 'Go to the Verde Bay Bank' },
-      { type: 'grab', target: 'bank', text: 'Grab the cash — stay in the vault doorway' },
-      { type: 'escape', text: 'Lose the cops and reach the marina boat' },
-    ],
-  },
-  {
-    id: 'harbor-heist', title: 'Harbor Heist', reward: 3500,
-    briefing: "Mara's last play: the cannery safe holds the Vipers' cut. Crack it, grab the cash, and run for the boat at the marina — the whole VBPD will be on you.",
-    stages: [
-      { type: 'goto', target: 'warehouse', text: 'Get to the Old Cannery' },
-      { type: 'grab', target: 'warehouse', text: 'Crack the safe — stay by the vault' },
-      { type: 'escape', text: 'Lose the cops and reach the marina boat' },
-    ],
-  },
-];
+export { MISSIONS };
 
 export function createMissionState() {
-  return { index: 0, stage: 0, stageT: 0, marker: null, objective: '', active: false, data: {} };
+  return { index: 0, stage: 0, stageT: 0, marker: null, objective: '', active: false, data: {}, nextAt: 0.6 };
+}
+
+function stageTarget(S, stage) {
+  if (!stage.target) return null;
+  const place = S.city.places[stage.target];
+  return place ? { x: place.x, y: place.y, label: place.name } : null;
 }
 
 export function startMission(S, index) {
   const def = MISSIONS[index];
-  if (!def) { S.mission.active = false; S.mission.objective = 'All jobs done — Verde Bay is yours.'; return; }
+  if (!def) {
+    S.mission.active = false;
+    S.mission.objective = 'All jobs done — Verde Bay is yours.';
+    return;
+  }
   S.mission.index = index;
   S.mission.stage = 0;
   S.mission.stageT = 0;
@@ -83,45 +35,33 @@ export function startMission(S, index) {
   beginStage(S);
 }
 
-function stageTarget(S, stage) {
-  if (!stage.target) return null;
-  const place = S.city.places[stage.target];
-  return place ? { x: place.x, y: place.y, label: place.name } : null;
-}
-
 function beginStage(S) {
   const def = MISSIONS[S.mission.index];
   const stage = def.stages[S.mission.stage];
   S.mission.stageT = 0;
   S.mission.objective = stage.text;
-  const target = stageTarget(S, stage);
-  S.mission.marker = target;
+  S.mission.marker = stageTarget(S, stage);
   // Stage-specific setup.
   if (stage.type === 'steal') {
     const marina = S.city.places.marina;
-    const car = makeCar('sport', marina.x - 60, marina.y - 40, 0, '#e74c3c', 'mission');
+    const car = S.makeCar('sport', marina.x - 60, marina.y - 40, 0, '#e74c3c', 'mission');
     S.cars.push(car);
     S.mission.data.targetCar = car;
     for (let i = 0; i < 3; i++) {
-      const g = makePed(S.rng, S.city, marina.x - 100 + i * 40, marina.y + 30, 'gang');
-      S.peds.push(g);
+      S.peds.push(S.makePed(marina.x - 100 + i * 40, marina.y + 30, 'gang'));
     }
   }
   if (stage.type === 'eliminate') {
     const wh = S.city.places.warehouse;
     S.mission.data.gang = [];
     for (let i = 0; i < stage.count; i++) {
-      const g = makePed(S.rng, S.city, wh.x - 80 + (i % 3) * 55, wh.y - 40 + Math.floor(i / 3) * 55, 'gang');
+      const g = S.makePed(wh.x - 80 + (i % 3) * 55, wh.y - 40 + Math.floor(i / 3) * 55, 'gang');
       S.peds.push(g);
       S.mission.data.gang.push(g);
     }
   }
-  if (def.id === 'getaway' && stage.type === 'driveTo') {
-    commitCrime(S, 1.5, 600);
-  }
-  if ((def.id === 'big-score' || def.id === 'harbor-heist') && stage.type === 'grab') {
-    commitCrime(S, 2, 600);
-  }
+  if (def.id === 'getaway' && stage.type === 'driveTo') S.commitCrime(1.5, 600);
+  if ((def.id === 'big-score' || def.id === 'harbor-heist') && stage.type === 'grab') S.commitCrime(2, 600);
 }
 
 export function updateMission(S, dt) {
@@ -136,10 +76,7 @@ export function updateMission(S, dt) {
 
   const advance = () => {
     M.stage += 1;
-    if (M.stage >= def.stages.length) {
-      completeMission(S, def);
-      return;
-    }
+    if (M.stage >= def.stages.length) { completeMission(S, def); return; }
     beginStage(S);
   };
 
@@ -149,7 +86,7 @@ export function updateMission(S, dt) {
     case 'deliver': {
       const t = stageTarget(S, stage);
       if (t && dist(px, py, t.x, t.y) < 46) {
-        if (stage.type === 'deliver') { sfx.cash(); addFloater(S, p.x, p.y - 30, 'Delivered', '#7dff8a'); }
+        if (stage.type === 'deliver') { sfx.cash(); S.addFloater(p.x, p.y - 30, 'Delivered', '#7dff8a'); }
         advance();
       }
       break;
@@ -165,7 +102,7 @@ export function updateMission(S, dt) {
         M.data.grabT = (M.data.grabT || 0) + dt;
         M.objective = `Grabbing the cash… ${Math.ceil(5 - M.data.grabT)}s`;
         if (M.data.grabT >= 5) {
-          spawnBurst(S, p.x, p.y, '#7dff8a', 14, 160);
+          S.spawnBurst(p.x, p.y, '#7dff8a', 14, 160);
           advance();
         }
       } else {
@@ -199,7 +136,8 @@ export function updateMission(S, dt) {
       break;
     }
     case 'escape': {
-      const finalTarget = (def.id === 'big-score' || def.id === 'harbor-heist') ? S.city.places.marina : S.city.places.stadium;
+      const finalTarget = (def.id === 'big-score' || def.id === 'harbor-heist')
+        ? S.city.places.marina : S.city.places.stadium;
       M.marker = { x: finalTarget.x, y: finalTarget.y, label: finalTarget.name };
       if (S.wanted.level === 0 && dist(px, py, finalTarget.x, finalTarget.y) < 70) advance();
       else if (S.wanted.level > 0) M.objective = 'Lose the cops, then reach the marker';
@@ -222,7 +160,7 @@ function completeMission(S, def) {
   S.message = `Job done — ${def.title} paid $${def.reward}.`;
   S.messageT = 4;
   sfx.mission();
-  spawnBurst(S, p.x, p.y - 20, '#ffd166', 20, 200);
+  S.spawnBurst(p.x, p.y - 20, '#ffd166', 20, 200);
   S.mission.active = false;
   S.mission.objective = '';
   S.mission.marker = null;
@@ -237,7 +175,11 @@ export function updateTaxi(S, dt) {
   const T = S.taxi;
   if (!T) return;
   if (!p.car || p.car.model !== 'taxi') {
-    if (T.active) { T.active = false; T.marker = null; S.message = 'Fare lost — you left the cab.'; S.messageT = 2; }
+    if (T.active) {
+      T.active = false; T.marker = null;
+      S.message = 'Fare lost — you left the cab.';
+      S.messageT = 2;
+    }
     return;
   }
   if (!T.active) {
@@ -262,7 +204,7 @@ export function updateTaxi(S, dt) {
   } else if (dist(cx, cy, T.marker.x, T.marker.y) < 48) {
     p.cash += T.fare;
     S.stats.bestCash = Math.max(S.stats.bestCash, p.cash);
-    addFloater(S, cx, cy - 30, `+$${T.fare}`, '#7dff8a');
+    S.addFloater(cx, cy - 30, `+$${T.fare}`, '#7dff8a');
     sfx.cash();
     T.active = false;
     T.marker = null;
