@@ -1,211 +1,80 @@
-/* VERDE BAY 3D — HUD and menu styling. Dusk palette: deep violet sky,
-warm gold accents, glassy dark panels. */
+/* VERDE BAY 3D — Neon Nights HUD. Dark navy + gold + neon pink on dusk. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1526; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #f2f0ea; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
 
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #1a1426;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  color: #f7ede2;
+#hud-top {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 12px 16px;
+  background: linear-gradient(to bottom, rgba(10, 16, 34, 0.72), rgba(10, 16, 34, 0));
 }
-
-#game, #game canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-#hud { position: absolute; inset: 0; pointer-events: none; }
-
-#hud-top-left {
-  position: absolute;
-  top: 14px;
-  left: 16px;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
-}
-
 #hud-cash {
-  font-size: 34px;
-  font-weight: 800;
-  color: #ffd166;
-  letter-spacing: 1px;
+  font-size: 30px; font-weight: 800; color: #ffd60a;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); letter-spacing: 0.5px;
+}
+#hud-mission { text-align: center; max-width: 46%; }
+#mission-title { font-size: 17px; font-weight: 800; letter-spacing: 1.5px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.85); }
+#mission-text { font-size: 13px; color: #ffe9a8; text-shadow: 0 1px 4px rgba(0,0,0,0.9); margin-top: 2px; }
+#hud-right { text-align: right; }
+#wanted { font-size: 22px; letter-spacing: 2px; line-height: 1; }
+#wanted .star { color: rgba(255,255,255,0.25); text-shadow: 0 0 6px rgba(0,0,0,0.6); }
+#wanted .star.lit { color: #ffd60a; text-shadow: 0 0 10px rgba(255, 214, 10, 0.9); }
+#hud-packages { font-size: 14px; font-weight: 700; color: #ffd60a; margin-top: 4px; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+
+#hud-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: flex-end;
+  padding: 12px 16px 14px;
+  background: linear-gradient(to top, rgba(10, 16, 34, 0.72), rgba(10, 16, 34, 0));
+}
+#nitro-wrap { width: 200px; }
+#nitro-label { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #00e5ff; margin-bottom: 4px; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+#nitro-bar { height: 10px; border: 1px solid rgba(255,255,255,0.5); border-radius: 5px; overflow: hidden; background: rgba(0,0,0,0.5); }
+#nitro-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #00e5ff, #7b2fff); transition: width 0.15s; }
+#hud-hints { font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px rgba(0,0,0,0.9); text-align: center; }
+#hud-speed { font-size: 24px; font-weight: 800; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.85); }
+#hud-speed span { font-size: 30px; }
+
+#minimap {
+  position: absolute; right: 16px; bottom: 64px;
+  border: 2px solid rgba(255, 214, 10, 0.75); border-radius: 8px;
+  background: rgba(10, 16, 34, 0.85);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
 }
 
-#hud-district {
-  font-size: 15px;
-  font-weight: 600;
-  color: #a8dadc;
-  letter-spacing: 2px;
-  text-transform: uppercase;
+#banner {
+  position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+  text-align: center; transition: opacity 0.4s;
 }
+#banner.hidden { opacity: 0; pointer-events: none; }
+#banner-title { font-size: 44px; font-weight: 900; letter-spacing: 3px; color: #ffd60a; text-shadow: 0 0 22px rgba(255, 180, 40, 0.8), 0 3px 8px rgba(0,0,0,0.9); }
+#banner-sub { font-size: 18px; font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.9); margin-top: 4px; }
 
-#hud-objective {
-  margin-top: 6px;
-  font-size: 15px;
-  color: #ffffff;
-  background: rgba(20, 14, 32, 0.65);
-  border-left: 4px solid #ffd166;
-  padding: 6px 10px;
-  max-width: 420px;
-  border-radius: 0 6px 6px 0;
+.overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 12, 28, 0.62); pointer-events: auto; backdrop-filter: blur(2px);
 }
-
-#hud-top-right {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  text-align: right;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+.overlay.hidden { display: none; }
+.panel {
+  max-width: 620px; width: 92%; padding: 34px 38px; text-align: center;
+  background: rgba(13, 21, 38, 0.92); border: 1px solid rgba(255, 214, 10, 0.55);
+  border-radius: 14px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
 }
-
-#hud-wanted {
-  font-size: 26px;
-  letter-spacing: 4px;
-  color: #8d99ae;
+.panel h1 { font-size: 52px; font-weight: 900; letter-spacing: 4px; color: #fff; line-height: 1; }
+.panel h1 span { color: #ffd60a; }
+.panel .tagline { color: #ff2e88; font-weight: 800; letter-spacing: 3px; font-size: 14px; margin: 8px 0 14px; }
+.panel p { font-size: 15px; line-height: 1.55; color: rgba(255,255,255,0.88); }
+.missions-list { text-align: left; margin: 18px auto 6px; max-width: 460px; font-size: 14px; }
+.mission-row { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); }
+.mission-num { display: inline-block; width: 22px; color: #ffd60a; font-weight: 800; }
+.mission-reward { float: right; color: #ffd60a; font-weight: 700; }
+.panel button {
+  pointer-events: auto; margin-top: 20px; padding: 13px 34px; font-size: 17px; font-weight: 800;
+  letter-spacing: 1.5px; color: #0d1526; background: linear-gradient(90deg, #ffd60a, #ff9e57);
+  border: none; border-radius: 9px; cursor: pointer; box-shadow: 0 4px 18px rgba(255, 170, 40, 0.45);
 }
-
-#hud-wanted.hot { color: #ff595e; }
-
-#hud-health {
-  margin-top: 6px;
-  width: 170px;
-  height: 10px;
-  margin-left: auto;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-#hud-health-bar {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #2a9d8f, #80ed99);
-}
-
-#hud-missions {
-  margin-top: 6px;
-  font-size: 14px;
-  color: #f7ede2;
-}
-
-#hud-banner {
-  position: absolute;
-  top: 22%;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 22px;
-  font-weight: 700;
-  text-align: center;
-  color: #ffffff;
-  background: rgba(20, 14, 32, 0.75);
-  border: 1px solid #ffd166;
-  padding: 12px 22px;
-  border-radius: 8px;
-  opacity: 0;
-  transition: opacity 0.3s;
-  max-width: 640px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-}
-
-#hud-minimap {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  border: 2px solid rgba(255, 209, 102, 0.8);
-  border-radius: 8px;
-  background: rgba(10, 8, 18, 0.7);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
-}
-
-#hud-help {
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
-  font-size: 13px;
-  color: rgba(247, 237, 226, 0.85);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-}
-
-/* --- start menu --- */
-
-#menu {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(160deg, rgba(26, 20, 38, 0.88), rgba(10, 8, 18, 0.94));
-  z-index: 10;
-}
-
-#menu.hidden { display: none; }
-
-#menu-card {
-  max-width: 620px;
-  padding: 36px 44px;
-  text-align: center;
-  background: rgba(20, 14, 32, 0.6);
-  border: 1px solid rgba(255, 209, 102, 0.45);
-  border-radius: 14px;
-  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.7);
-}
-
-#menu-card h1 {
-  margin: 0;
-  font-size: 52px;
-  letter-spacing: 6px;
-  color: #ffd166;
-}
-
-#menu-card h1 span { color: #e63946; }
-
-#menu-card .tagline {
-  margin: 4px 0 14px;
-  font-size: 16px;
-  letter-spacing: 1px;
-  color: #a8dadc;
-}
-
-#menu-card .story { font-size: 15px; line-height: 1.55; color: #f7ede2; }
-
-#menu-missions {
-  list-style: none;
-  padding: 0;
-  margin: 18px 0;
-  text-align: left;
-  font-size: 14px;
-  line-height: 1.9;
-  columns: 2;
-  column-gap: 28px;
-}
-
-#menu-missions strong { color: #ffd166; }
-
-#start-btn {
-  margin-top: 6px;
-  padding: 14px 44px;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 3px;
-  color: #1a1426;
-  background: #ffd166;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-#start-btn:hover { background: #ffca3a; }
-
-#menu-card .controls {
-  margin-top: 16px;
-  font-size: 13px;
-  color: rgba(247, 237, 226, 0.75);
-}
+.panel button:hover { filter: brightness(1.08); }
+.panel .controls { margin-top: 16px; font-size: 12px; color: rgba(255,255,255,0.6); }

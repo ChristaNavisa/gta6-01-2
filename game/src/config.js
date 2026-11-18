@@ -1,55 +1,65 @@
-// Tuning constants for VERDE BAY 3D. One place for every number the sim,
-// the city and the renderer agree on, so a balance change is a one-line edit.
+// Verde Bay tuning constants: world size, physics, vehicles, wanted ladder.
+// One place for every number the sim, the renderer and the HUD share.
 
-export const CONFIG = {
-  // World: the main island spans x 0..2600, y 0..2000; Isla Verde sits east
-  // across the bridge at x 2720..3380, so the whole map is 3400 x 2000.
-  world: { w: 3400, h: 2000, mainW: 2600 },
-  bridge: { x0: 2600, x1: 2720, y0: 940, y1: 1140 },
+export const WORLD = {
+  width: 3400,
+  height: 2200,
+  mainlandWidth: 2600,
+  channelX0: 2600,
+  channelX1: 2900,
+  islaX0: 2900,
+  // The bridge corridor across the channel (walkable / drivable strip).
+  bridgeY0: 1000,
+  bridgeY1: 1200,
+  bridgeX: 2750,
+  bridgeY: 1100,
+  // The sea along the south edge, below the beach.
+  seaY0: 2050,
+};
 
-  // Player on foot.
-  player: {
-    walkSpeed: 170, // world units per second
-    runSpeed: 260,
-    radius: 14,
-    health: 100,
-    pistolRange: 320,
-    pistolDamage: 34,
-    fireCooldown: 0.28,
-  },
+export const PLAYER = {
+  walkSpeed: 150,
+  runSpeed: 210,
+  radius: 14,
+  hp: 100,
+};
 
-  // Cars. Top speeds are world units per second (~1 unit = 0.3 m).
-  cars: {
-    sedan: { topSpeed: 620, accel: 420, brake: 700, turn: 2.6, grip: 8 },
-    sport: { topSpeed: 780, accel: 560, brake: 800, turn: 3.0, grip: 9 },
-    taxi: { topSpeed: 580, accel: 380, brake: 650, turn: 2.5, grip: 8 },
-    truck: { topSpeed: 460, accel: 260, brake: 500, turn: 1.9, grip: 7 },
-    cop: { topSpeed: 700, accel: 520, brake: 800, turn: 3.1, grip: 9 },
-  },
+export const VEHICLES = {
+  sedan: { name: 'Sedan', maxSpeed: 340, accel: 260, reverse: 140, turn: 2.6, nitroMax: 100 },
+  sport: { name: 'Comet GT', maxSpeed: 430, accel: 330, reverse: 160, turn: 3.0, nitroMax: 140 },
+  taxi: { name: 'Taxi', maxSpeed: 320, accel: 250, reverse: 130, turn: 2.7, nitroMax: 80 },
+  truck: { name: 'Hauler', maxSpeed: 250, accel: 180, reverse: 110, turn: 2.0, nitroMax: 60 },
+};
 
-  // Traffic and pedestrians.
-  traffic: { count: 16, cruiseSpeed: 240 },
-  peds: { count: 22, walkSpeed: 55 },
+export const VEHICLE_COLORS = [
+  '#2e5fa3', '#d7263d', '#f4b400', '#3fa34d', '#7b2fbe', '#e07a5f',
+  '#e9c46a', '#8ecae6', '#ef476f', '#06d6a0', '#c0c0c0', '#2b2d42',
+];
 
-  // Wanted system.
-  wanted: {
-    maxLevel: 5,
-    heatPerCrime: { steal: 35, grab: 80, assault: 25, kill: 60 },
-    decayPerSecond: 6, // heat drains when no crime is committed
-    copSpawnInterval: 4,
-    bustDistance: 34,
-    bustHoldSeconds: 1.5,
-    bustFine: 200,
-  },
+export const WANTED = {
+  // Heat thresholds for wanted levels 1..5.
+  thresholds: [25, 60, 120, 200, 300],
+  decayPerSecond: 2.5,
+  copSpeed: 300,
+  copCatchRadius: 26,
+  bustFine: 250,
+};
 
-  // Missions.
-  mission: {
-    targetRadius: 80, // how close the player must be to complete a goto
-    grabHoldSeconds: 2.0, // seconds the player must hold the grab point
-    escapeRadius: 320, // how far away escapeArea must take the player
-  },
+export const TRAFFIC_COUNT = 22;
+export const PED_COUNT = 36;
+export const MAX_COPS = 6;
 
-  // Camera and rendering.
-  camera: { height: 210, distance: 280, lookAhead: 90, smooth: 5 },
-  day: { sunAngle: -0.9, dusk: true },
+export const PACKAGE_REWARD = 250;
+export const PACKAGE_COUNT = 10;
+
+export const SAVE_KEY = 'verde-bay-save-v1';
+
+// Dusk palette for the renderer and the HUD.
+export const DUSK = {
+  skyTop: '#2b3a67',
+  skyBottom: '#ff9e57',
+  sun: '#ffb347',
+  fog: '#e8956b',
+  water: '#1d4e89',
+  sand: '#e8cf9a',
 };

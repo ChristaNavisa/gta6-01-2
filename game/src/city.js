@@ -1,215 +1,230 @@
-// VERDE BAY: an island city in the sea, built from one seed so every run of
-// the game shows the same streets. The main island holds six districts; a
-// bridge crosses the strait east to Isla Verde, the resort island, and the
-// harbor in the south-east holds the ferry terminal.
-//
-// District rectangles (x0, y0, x1, y1). districtAt answers which one a point
-// is in; districtNameAt answers the named place a point belongs to.
+// Verde Bay: the island city. A deterministic, seeded generator builds the
+// whole map — districts, buildings, palms, lamps, named places, the bridge,
+// the ferry and the ten hidden packages — so every seed plays the same city.
 
-import { CONFIG } from './config.js';
-import { mulberry32, randInt, randRange, pick } from './util.js';
+import { WORLD } from './config.js';
+import { mulberry32, randInt, randRange, pick, inRect } from './util.js';
 
-const DISTRICTS = [
-  { id: 'residential', name: 'Residential', x0: 400, y0: 40, x1: 1800, y1: 560 },
-  { id: 'downtown', name: 'Downtown', x0: 800, y0: 600, x1: 1700, y1: 1150 },
-  { id: 'oldtown', name: 'Old Town', x0: 40, y0: 480, x1: 620, y1: 1120 },
-  { id: 'industrial', name: 'Industrial', x0: 1900, y0: 700, x1: 2580, y1: 1420 },
-  { id: 'beach', name: 'Beach', x0: 800, y0: 1500, x1: 1900, y1: 1980 },
-  { id: 'marina', name: 'Marina', x0: 1920, y0: 1500, x1: 2580, y1: 1980 },
-  { id: 'isla', name: 'Isla Verde', x0: 2720, y0: 760, x1: 3380, y1: 1440 },
+// District rectangles. Order matters for districtAt: the first match wins.
+export const DISTRICTS = [
+  { id: 'isla', name: 'Isla Verde', x0: 2900, y0: 700, x1: 3400, y1: 1500, ground: '#7fae6e' },
+  { id: 'strip', name: 'The Strip', x0: 1700, y0: 1400, x1: 2600, y1: 1750, ground: '#241a33' },
+  { id: 'marina', name: 'Marina del Sol', x0: 1700, y0: 1750, x1: 2600, y1: 2050, ground: '#5a6b7a' },
+  { id: 'industrial', name: 'Old Cannery', x0: 1700, y0: 0, x1: 2600, y1: 1400, ground: '#6b6560' },
+  { id: 'beach', name: 'Verde Beach', x0: 0, y0: 1250, x1: 1700, y1: 2050, ground: '#e8cf9a' },
+  { id: 'downtown', name: 'Downtown', x0: 700, y0: 550, x1: 1700, y1: 1250, ground: '#8a8f98' },
+  { id: 'oldtown', name: 'Oldtown', x0: 0, y0: 0, x1: 700, y1: 1250, ground: '#a08b74' },
+  { id: 'residential', name: 'Palmside', x0: 700, y0: 0, x1: 1700, y1: 550, ground: '#9db08a' },
 ];
 
-// Named sub-areas: a point inside one answers with its name.
-const NAMED = [
-  { name: 'Verde Bridge', x0: 2600, y0: 940, x1: 2720, y1: 1140 },
-  { name: 'Ferry Terminal', x0: 2200, y0: 1840, x1: 2450, y1: 1980 },
-  { name: 'Marina del Sol', x0: 1920, y0: 1500, x1: 2580, y1: 1980 },
-  { name: 'Old Cannery', x0: 1900, y0: 700, x1: 2580, y1: 1420 },
-  { name: 'Isla Verde', x0: 2720, y0: 760, x1: 3380, y1: 1440 },
-];
+const DISTRICT_BY_ID = new Map(DISTRICTS.map((d) => [d.id, d]));
 
-// Axis-aligned streets. Traffic drives along these; buildings keep off them.
-const ROADS = [
-  { x0: 300, y0: 200, x1: 1900, y1: 200 },
-  { x0: 100, y0: 580, x1: 2500, y1: 580 },
-  { x0: 100, y0: 1150, x1: 2600, y1: 1150 },
-  { x0: 700, y0: 1450, x1: 2600, y1: 1450 },
-  { x0: 700, y0: 1650, x1: 2500, y1: 1650 },
-  { x0: 1900, y0: 1050, x1: 3380, y1: 1050 },
-  { x0: 300, y0: 400, x1: 300, y1: 1200 },
-  { x0: 700, y0: 100, x1: 700, y1: 1900 },
-  { x0: 1100, y0: 40, x1: 1100, y1: 1900 },
-  { x0: 1500, y0: 100, x1: 1500, y1: 1900 },
-  { x0: 2000, y0: 580, x1: 2000, y1: 1980 },
-  { x0: 2300, y0: 700, x1: 2300, y1: 1980 },
-  { x0: 3050, y0: 760, x1: 3050, y1: 1440 },
-];
+const BEACH_ROOFS = ['#f4a261', '#e9c46a', '#f7ede2', '#ee9b7a'];
+const DOWNTOWN_ROOFS = ['#3d405b', '#5c6b73', '#8d99ae', '#6d6875'];
+const RESIDENTIAL_ROOFS = ['#b08968', '#7f4f24', '#936639', '#c2a878'];
+const OLDTOWN_ROOFS = ['#9c6644', '#7f4f24', '#b08968', '#6b4226'];
+const NEON_SIGNS = ['#ff2e88', '#00e5ff', '#ffd60a', '#7b2fff', '#39ff14', '#ff6b35'];
 
 // Named places the missions and the HUD point at.
 export const PLACES = {
-  garage: { x: 1000, y: 900, label: 'Verde Motors Garage', district: 'downtown' },
-  stadium: { x: 1400, y: 400, label: 'Bay Stadium', district: 'residential' },
-  marina: { x: 2150, y: 1830, label: 'Marina del Sol', district: 'marina' },
-  warehouse: { x: 2150, y: 1050, label: 'Harbor Warehouse', district: 'industrial' },
-  cannery: { x: 2000, y: 1130, label: 'Old Cannery', district: 'industrial' },
-  diner: { x: 500, y: 800, label: "Rosa's Diner", district: 'oldtown' },
-  hotel: { x: 1200, y: 700, label: 'Hotel Miramar', district: 'downtown' },
-  bank: { x: 1150, y: 950, label: 'Verde Bay Bank', district: 'downtown' },
-  pier: { x: 1500, y: 1750, label: 'Sunset Pier', district: 'beach' },
-  club: { x: 900, y: 1700, label: 'Club Marea', district: 'beach' },
-  market: { x: 600, y: 400, label: 'Old Market', district: 'oldtown' },
-  plaza: { x: 1100, y: 1000, label: 'Liberty Plaza', district: 'downtown' },
-  ferry: { x: 2250, y: 1880, label: 'Ferry Terminal', district: 'marina' },
-  bridge: { x: 2660, y: 1040, label: 'Verde Bridge', district: 'water' },
-  islandDepot: { x: 3050, y: 1100, label: 'Isla Verde Depot', district: 'isla' },
+  garage: { x: 950, y: 1150, label: 'Sunset Garage' },
+  diner: { x: 600, y: 900, label: 'Marla Diner' },
+  stadium: { x: 1400, y: 350, label: 'Verde Stadium' },
+  warehouse: { x: 2050, y: 1050, label: 'Cannery Warehouse' },
+  cannery: { x: 2000, y: 1130, label: 'Old Cannery' },
+  bank: { x: 1200, y: 950, label: 'Verde Bay Bank' },
+  marina: { x: 2150, y: 1830, label: 'Marina del Sol' },
+  ferry: { x: 2250, y: 1880, label: 'Ferry Terminal' },
+  taxi: { x: 900, y: 700, label: 'Taxi Stand' },
+  hotel: { x: 1500, y: 700, label: 'Hotel Miramar' },
+  casino: { x: 2100, y: 1550, label: 'Casino Royale Verde' },
+  villa: { x: 3150, y: 1100, label: 'Villa Solana' },
+  bridge: { x: 2750, y: 1100, label: 'Verde Bridge' },
+  beach: { x: 1300, y: 1750, label: 'Verde Beach' },
+  police: { x: 800, y: 1150, label: 'Verde Bay PD' },
+  hospital: { x: 400, y: 400, label: 'St. Verde Hospital' },
 };
 
-const BEACH_ROOFS = ['#f4a261', '#e9c46a', '#f7ede2', '#ee9b7a'];
-const DOWNTOWN_ROOFS = ['#3a506b', '#5c6b7a', '#2e4057', '#6c757d'];
-const OLD_ROOFS = ['#b5654a', '#8d4b3a', '#a9714b'];
-const MARINA_ROOFS = ['#f7ede2', '#a8dadc', '#457b9d'];
-const ISLA_ROOFS = ['#f4a261', '#e9c46a', '#ffffff', '#2a9d8f'];
+// Ten hidden packages, tucked into alleys and corners at least 200px from
+// every named place so the mission test driver never trips over one.
+const PACKAGE_SPOTS = [
+  { x: 180, y: 1900 },
+  { x: 650, y: 1600 },
+  { x: 1500, y: 2000 },
+  { x: 1750, y: 500 },
+  { x: 2450, y: 1300 },
+  { x: 1900, y: 1650 },
+  { x: 2500, y: 1900 },
+  { x: 3000, y: 800 },
+  { x: 3300, y: 1300 },
+  { x: 350, y: 1150 },
+];
 
-function inside(r, x, y) {
-  return x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
-}
-
-/** Which district a point is in ('water' for the sea and the strait). */
+/** The district id at a point, or 'water' / 'bridge' / 'outskirts'. */
 export function districtAt(x, y) {
-  for (const d of DISTRICTS) if (inside(d, x, y)) return d.id;
+  for (const d of DISTRICTS) {
+    if (inRect(x, y, d)) return d.id;
+  }
+  if (x >= WORLD.channelX0 && x <= WORLD.channelX1 && y >= WORLD.bridgeY0 && y <= WORLD.bridgeY1) return 'bridge';
   return 'water';
 }
 
-/** The named place a point belongs to, or its district's display name. */
+/** A display name at a point: landmark names win near their places. */
 export function districtNameAt(x, y) {
-  for (const n of NAMED) if (inside(n, x, y)) return n.name;
-  const d = districtAt(x, y);
-  if (d === 'water') return 'Open Sea';
-  return DISTRICTS.find((dd) => dd.id === d).name;
-}
-
-/** True when the point is sea: outside both islands and off the bridge. */
-export function isWater(x, y) {
-  const b = CONFIG.bridge;
-  if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1) return false;
-  if (x >= 0 && x <= CONFIG.world.mainW && y >= 0 && y <= CONFIG.world.h) return false;
-  if (x >= 2720 && x <= 3380 && y >= 700 && y <= 1500) return false;
-  return true;
-}
-
-function nearRoad(x, y, margin) {
-  for (const r of ROADS) {
-    const horizontal = r.y0 === r.y1;
-    if (horizontal) {
-      if (x >= r.x0 - margin && x <= r.x1 + margin && Math.abs(y - r.y0) < margin + 26) return true;
-    } else if (y >= r.y0 - margin && y <= r.y1 + margin && Math.abs(x - r.x0) < margin + 26) {
-      return true;
+  const named = [
+    ['Marina del Sol', PLACES.marina],
+    ['Old Cannery', PLACES.cannery],
+    ['Ferry Terminal', PLACES.ferry],
+  ];
+  let best = null;
+  let bestD = 150;
+  for (const [name, p] of named) {
+    const d = Math.hypot(x - p.x, y - p.y);
+    if (d < bestD) {
+      bestD = d;
+      best = name;
     }
   }
-  return false;
+  if (best) return best;
+  const id = districtAt(x, y);
+  if (id === 'water') return 'Verde Bay';
+  if (id === 'bridge') return 'Verde Bridge';
+  return DISTRICT_BY_ID.get(id)?.name ?? 'Verde Bay';
 }
 
-function nearPlace(x, y, margin) {
+/** True when a point is water (the channel, the sea, or around Isla Verde). */
+export function isWater(x, y) {
+  return districtAt(x, y) === 'water';
+}
+
+/** True when a point can be walked or driven on (land or bridge). */
+export function isLand(x, y) {
+  const d = districtAt(x, y);
+  return d !== 'water';
+}
+
+function nearAnyPlace(x, y, r) {
   for (const p of Object.values(PLACES)) {
-    const dx = x - p.x;
-    const dy = y - p.y;
-    if (dx * dx + dy * dy < margin * margin) return true;
+    if (Math.hypot(x - p.x, y - p.y) < r) return true;
   }
   return false;
 }
 
-/** Build the whole city from one seed: buildings, palms, roads, places. */
+function buildingFor(rng, district, bx, by, bw, bd) {
+  const b = { x: bx, y: by, w: bw, d: bd, floors: 1, height: 12, roof: '#888888', district, stack: false, neon: false, sign: null };
+  if (district === 'downtown') {
+    b.floors = randInt(rng, 6, 18);
+    b.height = b.floors * 9 + randInt(rng, 0, 8);
+    b.roof = pick(rng, DOWNTOWN_ROOFS);
+  } else if (district === 'industrial') {
+    b.floors = 1;
+    b.height = randInt(rng, 14, 26);
+    b.roof = pick(rng, ['#5a5a5a', '#6b6560', '#4a4a4a']);
+    b.stack = rng() < 0.35;
+  } else if (district === 'beach') {
+    b.floors = randInt(rng, 1, 3);
+    b.height = b.floors * 9 + 4;
+    b.roof = pick(rng, BEACH_ROOFS);
+  } else if (district === 'oldtown') {
+    b.floors = randInt(rng, 1, 2);
+    b.height = b.floors * 10 + 4;
+    b.roof = pick(rng, OLDTOWN_ROOFS);
+  } else if (district === 'residential') {
+    b.floors = randInt(rng, 1, 3);
+    b.height = b.floors * 9 + 4;
+    b.roof = pick(rng, RESIDENTIAL_ROOFS);
+  } else if (district === 'strip') {
+    b.floors = randInt(rng, 4, 10);
+    b.height = b.floors * 10 + randInt(rng, 0, 10);
+    b.roof = pick(rng, ['#1d1b2e', '#2a1b3d', '#331832']);
+    b.neon = rng() < 0.8;
+    b.sign = pick(rng, NEON_SIGNS);
+  } else if (district === 'marina') {
+    b.floors = randInt(rng, 1, 4);
+    b.height = b.floors * 9 + 4;
+    b.roof = pick(rng, ['#e9c46a', '#8ecae6', '#f7ede2']);
+  } else if (district === 'isla') {
+    b.floors = randInt(rng, 1, 2);
+    b.height = b.floors * 10 + 6;
+    b.roof = pick(rng, ['#f4a261', '#e9c46a', '#ffffff']);
+  }
+  return b;
+}
+
+/** Build the whole city for a seed. Deterministic: same seed, same city. */
 export function generateCity(seed) {
   const rng = mulberry32(seed);
   const buildings = [];
-  const palms = [];
+  const BLOCK = 200;
+  const ROAD = 44;
+  const inner = BLOCK - ROAD;
 
-  for (const d of DISTRICTS) {
-    const step = d.id === 'industrial' ? 170 : d.id === 'downtown' ? 130 : 120;
-    for (let gx = d.x0 + 60; gx < d.x1 - 40; gx += step) {
-      for (let gy = d.y0 + 60; gy < d.y1 - 40; gy += step) {
-        if (rng() < 0.18) continue; // empty lots keep the city breathing
-        const x = gx + randRange(rng, -18, 18);
-        const y = gy + randRange(rng, -18, 18);
-        if (nearRoad(x, y, 20) || nearPlace(x, y, 110)) continue;
-        let floors;
-        let w;
-        let depth;
-        let roof;
-        let stack = false;
-        if (d.id === 'downtown') {
-          floors = randInt(rng, 6, 14);
-          w = randRange(rng, 44, 78);
-          depth = randRange(rng, 44, 78);
-          roof = pick(rng, DOWNTOWN_ROOFS);
-        } else if (d.id === 'industrial') {
-          floors = 1;
-          w = randRange(rng, 70, 130);
-          depth = randRange(rng, 60, 110);
-          roof = pick(rng, ['#6b705c', '#7d7a6e', '#5f6a6a']);
-          stack = rng() < 0.3;
-        } else if (d.id === 'beach') {
-          floors = randInt(rng, 1, 3);
-          w = randRange(rng, 40, 70);
-          depth = randRange(rng, 40, 70);
-          roof = pick(rng, BEACH_ROOFS);
-        } else if (d.id === 'oldtown') {
-          floors = randInt(rng, 1, 2);
-          w = randRange(rng, 40, 66);
-          depth = randRange(rng, 40, 66);
-          roof = pick(rng, OLD_ROOFS);
-        } else if (d.id === 'marina') {
-          floors = randInt(rng, 2, 4);
-          w = randRange(rng, 44, 72);
-          depth = randRange(rng, 44, 72);
-          roof = pick(rng, MARINA_ROOFS);
-        } else if (d.id === 'isla') {
-          floors = randInt(rng, 1, 3);
-          w = randRange(rng, 44, 76);
-          depth = randRange(rng, 44, 76);
-          roof = pick(rng, ISLA_ROOFS);
-        } else {
-          floors = randInt(rng, 1, 3);
-          w = randRange(rng, 40, 66);
-          depth = randRange(rng, 40, 66);
-          roof = pick(rng, ['#e07a5f', '#f2cc8f', '#81b29a']);
-        }
-        buildings.push({
-          x, y, w, d: depth, height: floors * 7 + 6, floors, roof, district: d.id, stack,
-        });
+  // Grid blocks across the mainland and Isla Verde.
+  for (let gx = 0; gx < 17; gx++) {
+    for (let gy = 0; gy < 11; gy++) {
+      const bx0 = gx * BLOCK;
+      const by0 = gy * BLOCK;
+      const cx = bx0 + BLOCK / 2;
+      const cy = by0 + BLOCK / 2;
+      // Isla Verde occupies its own corner; the channel is water.
+      if (bx0 >= WORLD.channelX0 && bx0 < WORLD.islaX0) continue;
+      if (bx0 >= WORLD.islaX0 && (cy < 700 || cy > 1500)) continue;
+      if (by0 >= WORLD.seaY0) continue;
+      const district = districtAt(cx, cy);
+      if (district === 'water' || district === 'bridge') continue;
+      if (nearAnyPlace(cx, cy, 150)) continue;
+      // 1-3 buildings per block, kept inside the block's inner square.
+      const count = district === 'downtown' || district === 'strip' ? randInt(rng, 2, 3) : randInt(rng, 1, 2);
+      for (let i = 0; i < count; i++) {
+        const w = district === 'industrial' ? randRange(rng, 110, 150) : randRange(rng, 46, 110);
+        const d = district === 'industrial' ? randRange(rng, 70, 110) : randRange(rng, 40, 90);
+        const x = bx0 + ROAD / 2 + randRange(rng, 0, Math.max(1, inner - w));
+        const y = by0 + ROAD / 2 + randRange(rng, 0, Math.max(1, inner - d));
+        buildings.push(buildingFor(rng, district, x, y, w, d));
       }
     }
   }
 
-  // Guarantee at least one smokestack in the industrial district: the
-  // seeded grid can otherwise roll a stack-free set of warehouses.
-  if (!buildings.some((b) => b.district === 'industrial' && b.stack)) {
-    const first = buildings.find((b) => b.district === 'industrial');
-    if (first) first.stack = true;
-  }
-
-  // Palms cluster along the beach and the marina, with a few on Isla Verde.
-  for (let i = 0; i < 42; i++) {
-    palms.push({ x: randRange(rng, 830, 1880), y: randRange(rng, 1520, 1960) });
+  // Palms along the beach and the marina promenade.
+  const palms = [];
+  for (let i = 0; i < 36; i++) {
+    palms.push({ x: randRange(rng, 80, 1650), y: randRange(rng, 1520, 2000) });
   }
   for (let i = 0; i < 8; i++) {
-    palms.push({ x: randRange(rng, 1960, 2540), y: randRange(rng, 1560, 1940) });
+    palms.push({ x: randRange(rng, 1750, 2550), y: randRange(rng, 1780, 2000) });
   }
-  for (let i = 0; i < 7; i++) {
-    palms.push({ x: randRange(rng, 2760, 3340), y: randRange(rng, 1300, 1420) });
+  // A few palms on Isla Verde too.
+  for (let i = 0; i < 6; i++) {
+    palms.push({ x: randRange(rng, 2950, 3350), y: randRange(rng, 750, 1450) });
   }
+
+  // Street lamps at road intersections.
+  const lamps = [];
+  for (let gx = 1; gx < 13; gx++) {
+    for (let gy = 1; gy < 11; gy++) {
+      if (rng() < 0.55) lamps.push({ x: gx * BLOCK + 26, y: gy * BLOCK + 26 });
+    }
+  }
+  for (let gx = 15; gx < 17; gx++) {
+    for (let gy = 4; gy < 8; gy++) {
+      lamps.push({ x: gx * BLOCK + 26, y: gy * BLOCK + 26 });
+    }
+  }
+
+  // The ferry at the marina dock, and a static cargo ship in the channel.
+  const ferry = { x: PLACES.ferry.x + 60, y: PLACES.ferry.y + 70, angle: 0.2 };
+  const ship = { x: 2750, y: 600, angle: Math.PI / 2 };
 
   return {
     seed,
-    width: CONFIG.world.w,
-    height: CONFIG.world.h,
-    districts: DISTRICTS,
-    roads: ROADS,
+    width: WORLD.width,
+    height: WORLD.height,
     buildings,
     palms,
-    places: PLACES,
-    bridge: CONFIG.bridge,
-    // The ferry sits moored at the terminal dock, static.
-    ferry: { x: 2320, y: 1900, angle: 0.35 },
+    lamps,
+    ferry,
+    ship,
+    places: { ...PLACES },
+    packages: PACKAGE_SPOTS.map((p) => ({ x: p.x, y: p.y, found: false })),
   };
 }

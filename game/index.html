@@ -1,30 +1,22 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VERDE BAY 3D — an open-world crime game</title>
+<title>VERDE BAY 3D — Neon Nights</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.min.js"
+  }
+}
+</script>
 </head>
 <body>
-<div id="game"></div>
+<canvas id="view"></canvas>
 <div id="hud"></div>
-<div id="menu">
-  <div id="menu-card">
-    <h1>VERDE BAY <span>3D</span></h1>
-    <p class="tagline">An island city. Eight jobs. One last ferry out.</p>
-    <p class="story">Verde Bay is a sun-soaked island city of four districts, a beach, a
-    marina and a bridge to Isla Verde. You are a wheelman with nothing but a
-    pistol and a reputation. Work for Milo, Rosa and Ferry — steal cars, run
-    cargo, crack vaults — and stay ahead of the Verde Bay police.</p>
-    <ul id="menu-missions"></ul>
-    <button id="start-btn">START ENGINE</button>
-    <p class="controls">WASD walk / drive &middot; E enter or steal a car &middot; Space or click
-    shoot &middot; Shift run &middot; M start next mission &middot; progress saves automatically</p>
-  </div>
-</div>
-<script src="vendor/three.min.js"></script>
-<script type="module" src="src/main.js"></script>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>

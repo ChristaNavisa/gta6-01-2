@@ -1,51 +1,53 @@
-// Keyboard and mouse input. The sim reads `keys` (held) and `justPressed`
-// (pressed since the last frame); main.js clears justPressed every frame
-// after the sim has seen it. Mouse position is kept relative to the canvas
-// centre so the sim can aim the pistol and the camera can read it.
+// Keyboard + mouse input for Verde Bay.
+// Keeps two sets the sim reads every frame: `keys` (held) and `justPressed`
+// (pressed since the last update; the sim clears it each step).
 
-/** Create the input state and attach it to the window. Returns the state. */
-export function createInput(canvas) {
-  const input = {
-    keys: new Set(),
-    justPressed: new Set(),
-    mouse: { x: 0, y: 0, down: false, screenDx: 0, screenDy: 0 },
-  };
+/** Attach listeners and return the shared input state. */
+export function createInput() {
+  const input = { keys: new Set(), justPressed: new Set(), mouseX: 0, mouseY: 0, mouseDown: false };
 
-  const GAME_KEYS = [
-    'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyM', 'KeyR', 'Space',
+  const GAME_KEYS = new Set([
+    'KeyW', 'KeyA', 'KeyS', 'KeyD',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-    'ShiftLeft', 'ShiftRight',
-  ];
+    'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'KeyF', 'KeyM', 'KeyP', 'Escape',
+  ]);
 
-  window.addEventListener('keydown', (e) => {
-    if (!GAME_KEYS.includes(e.code)) return;
-    e.preventDefault();
-    if (!input.keys.has(e.code)) input.justPressed.add(e.code);
-    input.keys.add(e.code);
-  });
-  window.addEventListener('keyup', (e) => {
+  function onKeyDown(e) {
+    if (!GAME_KEYS.has(e.code)) return;
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      e.preventDefault();
+    }
+    if (!e.repeat) {
+      input.keys.add(e.code);
+      input.justPressed.add(e.code);
+    }
+  }
+
+  function onKeyUp(e) {
     input.keys.delete(e.code);
-  });
-  window.addEventListener('blur', () => {
-    input.keys.clear();
-    input.mouse.down = false;
-  });
+  }
 
-  const trackMouse = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    input.mouse.x = e.clientX - rect.left;
-    input.mouse.y = e.clientY - rect.top;
-    input.mouse.screenDx = input.mouse.x - rect.width / 2;
-    input.mouse.screenDy = input.mouse.y - rect.height / 2;
-  };
-  canvas.addEventListener('mousemove', trackMouse);
-  canvas.addEventListener('mousedown', (e) => {
-    trackMouse(e);
-    input.mouse.down = true;
-  });
-  window.addEventListener('mouseup', () => {
-    input.mouse.down = false;
-  });
+  function onMouseDown(e) {
+    input.mouseDown = true;
+    input.justPressed.add('Mouse0');
+    input.mouseX = e.clientX;
+    input.mouseY = e.clientY;
+  }
+
+  function onMouseUp() {
+    input.mouseDown = false;
+  }
+
+  function onBlur() {
+    input.keys.clear();
+    input.mouseDown = false;
+  }
+
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
+  window.addEventListener('blur', onBlur);
 
   return input;
 }

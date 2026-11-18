@@ -1,15 +1,14 @@
-// VERDE BAY 3D — a tiny static file server for local play-testing.
-// Serves this directory's game/ at http://localhost:8080. Node standard
-// library only; nothing is installed, nothing leaves the machine.
+// VERDE BAY 3D — local static server for play-testing.
+// Serves game/ at http://localhost:8080 (node serve.ts).
+// Node 22, standard library only; no build step.
 
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const gameDir = join(here, 'game');
-const port = parseInt(process.env.PORT ?? '8080', 10);
+const root = join(dirname(fileURLToPath(import.meta.url)), 'game');
+const port = parseInt(process.argv[2] ?? '8080', 10);
 
 const MIME = {
   '.html': 'text/html',
@@ -24,9 +23,9 @@ const MIME = {
 
 const server = createServer((req, res) => {
   const url = decodeURIComponent((req.url ?? '/').split('?')[0]);
-  const file = join(gameDir, url === '/' ? 'index.html' : url);
-  if (!file.startsWith(gameDir) || !existsSync(file) || statSync(file).isDirectory()) {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
+  const file = join(root, url === '/' ? 'index.html' : url);
+  if (!file.startsWith(root) || !existsSync(file) || statSync(file).isDirectory()) {
+    res.writeHead(404);
     res.end('not found');
     return;
   }

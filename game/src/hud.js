@@ -1,147 +1,199 @@
-// The DOM HUD: cash and mission objective, wanted stars, health, the
-// minimap canvas, and the start menu. The sim owns the numbers; this file
-// only draws them.
+// Verde Bay HUD: cash, wanted stars, mission tracker, nitro meter, the
+// package counter, the minimap and the start / busted / complete overlays.
+// All DOM, drawn over the 3D canvas; the sim never touches the DOM.
 
-import { MISSIONS, missionObjective } from './missions.js';
-import { districtNameAt } from './city.js';
-import { fmtCash } from './util.js';
+import { MISSIONS } from './missions.js';
+import { DISTRICTS } from './city.js';
+import { WORLD } from './config.js';
 
-const DISTRICT_COLORS = {
-  downtown: '#5c6b7a',
-  industrial: '#6b705c',
-  beach: '#e9c46a',
-  oldtown: '#b5654a',
-  residential: '#81b29a',
-  marina: '#457b9d',
-  isla: '#2a9d8f',
-  water: '#1d4e6b',
-};
-
-/** Build the HUD inside the page. Returns { update, showBanner }. */
-export function createHUD(S) {
-  const root = document.getElementById('hud');
+/** Build the HUD inside `root` and return { update(S), banner(text, sub), showStart(), hideStart() }. */
+export function createHud(root, S) {
   root.innerHTML = `
-    <div id="hud-top-left">
-      <div id="hud-cash">$0</div>
-      <div id="hud-district">Downtown</div>
-      <div id="hud-objective"></div>
+    <div id="hud-top">
+      <div id="hud-cash">$<span id="cash">0</span></div>
+      <div id="hud-mission">
+        <div id="mission-title">VERDE BAY</div>
+        <div id="mission-text">Welcome to Verde Bay</div>
+      </div>
+      <div id="hud-right">
+        <div id="wanted"></div>
+        <div id="hud-packages">◆ <span id="pkg">0</span>/10</div>
+      </div>
     </div>
-    <div id="hud-top-right">
-      <div id="hud-wanted"></div>
-      <div id="hud-health"><div id="hud-health-bar"></div></div>
-      <div id="hud-missions"></div>
+    <div id="hud-bottom">
+      <div id="nitro-wrap"><div id="nitro-label">NITRO</div><div id="nitro-bar"><div id="nitro-fill"></div></div></div>
+      <div id="hud-hints">WASD drive / walk &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; SHIFT nitro / run &nbsp;·&nbsp; SPACE shoot / brake &nbsp;·&nbsp; M mute</div>
+      <div id="hud-speed"><span id="speed">0</span> mph</div>
     </div>
-    <div id="hud-banner"></div>
-    <canvas id="hud-minimap" width="220" height="150"></canvas>
-    <div id="hud-help">WASD drive / walk &middot; E enter car &middot; Space shoot &middot; M mission &middot; Shift run</div>
-  `;
-  const cashEl = document.getElementById('hud-cash');
-  const districtEl = document.getElementById('hud-district');
-  const objectiveEl = document.getElementById('hud-objective');
-  const wantedEl = document.getElementById('hud-wanted');
-  const healthBar = document.getElementById('hud-health-bar');
-  const missionsEl = document.getElementById('hud-missions');
-  const bannerEl = document.getElementById('hud-banner');
-  const map = document.getElementById('hud-minimap');
-  const mapCtx = map.getContext('2d');
+    <canvas id="minimap" width="220" height="150"></canvas>
+    <div id="banner" class="hidden"><div id="banner-title"></div><div id="banner-sub"></div></div>
+    <div id="overlay-start" class="overlay">
+      <div class="panel">
+        <h1>VERDE BAY <span>3D</span></h1>
+        <p class="tagline">NEON NIGHTS — an open-world crime story</p>
+        <p>Seven districts, an island across the bridge, ten story missions,
+        street races, a bank vault, and ten hidden packages. Steal cars,
+        outrun the Verde Bay PD, and take the city.</p>
+        <div class="missions-list" id="missions-list"></div>
+        <button id="btn-start">▶ &nbsp;START THE NIGHT</button>
+        <p class="controls">WASD move &nbsp;·&nbsp; E enter / exit car &nbsp;·&nbsp; SHIFT nitro &nbsp;·&nbsp; SPACE shoot &nbsp;·&nbsp; M mute</p>
+      </div>
+    </div>
+    <div id="overlay-busted" class="overlay hidden">
+      <div class="panel"><h1>BUSTED</h1><p>The Verde Bay PD caught you. $250 fine.</p><button id="btn-busted">BACK TO THE STREETS</button></div>
+    </div>
+    <div id="overlay-wasted" class="overlay hidden">
+      <div class="panel"><h1>WASTED</h1><p>You woke up at St. Verde Hospital. $250 gone.</p><button id="btn-wasted">BACK TO THE STREETS</button></div>
+    </div>`;
 
-  let bannerTimer = 0;
-  let lastMissionsDone = -1;
+  const cashEl = root.querySelector('#cash');
+  const missionTitle = root.querySelector('#mission-title');
+  const missionText = root.querySelector('#mission-text');
+  const wantedEl = root.querySelector('#wanted');
+  const pkgEl = root.querySelector('#pkg');
+  const nitroFill = root.querySelector('#nitro-fill');
+  const speedEl = root.querySelector('#speed');
+  const minimap = root.querySelector('#minimap');
+  const mm = minimap.getContext('2d');
+  const bannerEl = root.querySelector('#banner');
+  const bannerTitle = root.querySelector('#banner-title');
+  const bannerSub = root.querySelector('#banner-sub');
+  const startOverlay = root.querySelector('#overlay-start');
+  const bustedOverlay = root.querySelector('#overlay-busted');
+  const wastedOverlay = root.querySelector('#overlay-wasted');
+
+  root.querySelector('#missions-list').innerHTML = MISSIONS.map(
+    (m, i) => `<div class="mission-row"><span class="mission-num">${i + 1}</span> ${m.title} <span class="mission-reward">$${m.reward.toLocaleString('en-US')}</span></div>`,
+  ).join('');
+
+  let bannerTimer = null;
+  function banner(title, sub = '') {
+    bannerTitle.textContent = title;
+    bannerSub.textContent = sub;
+    bannerEl.classList.remove('hidden');
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => bannerEl.classList.add('hidden'), 3600);
+  }
 
   function drawMinimap() {
-    const city = S.city;
-    const sx = map.width / city.width;
-    const sy = map.height / city.height;
-    mapCtx.clearRect(0, 0, map.width, map.height);
-    // Sea.
-    mapCtx.fillStyle = '#16324a';
-    mapCtx.fillRect(0, 0, map.width, map.height);
-    // Land.
-    mapCtx.fillStyle = '#3d5a40';
-    mapCtx.fillRect(0, 0, 2600 * sx, 2000 * sy);
-    mapCtx.fillRect(2720 * sx, 700 * sy, 660 * sx, 800 * sy);
+    const w = minimap.width;
+    const h = minimap.height;
+    const sx = w / WORLD.width;
+    const sy = h / WORLD.height;
+    mm.clearRect(0, 0, w, h);
+    mm.fillStyle = '#0d1526';
+    mm.fillRect(0, 0, w, h);
+    // Water.
+    mm.fillStyle = '#1d4e89';
+    mm.fillRect(WORLD.channelX0 * sx, 0, (WORLD.channelX1 - WORLD.channelX0) * sx, h);
+    mm.fillRect(0, WORLD.seaY0 * sy, w, h - WORLD.seaY0 * sy);
     // Districts.
-    for (const d of city.districts) {
-      mapCtx.fillStyle = DISTRICT_COLORS[d.id] ?? '#888888';
-      mapCtx.fillRect(d.x0 * sx, d.y0 * sy, (d.x1 - d.x0) * sx, (d.y1 - d.y0) * sy);
+    for (const d of DISTRICTS) {
+      mm.fillStyle = d.id === 'strip' ? '#3d2b5c' : d.id === 'beach' ? '#d9bd7f' : d.id === 'isla' ? '#5d8a4e' : '#3a4150';
+      mm.fillRect(d.x0 * sx, d.y0 * sy, (d.x1 - d.x0) * sx, (d.y1 - d.y0) * sy);
     }
-    // Bridge.
-    mapCtx.fillStyle = '#c1121f';
-    mapCtx.fillRect(2600 * sx, 940 * sy, 120 * sx, 200 * sy);
     // Roads.
-    mapCtx.strokeStyle = 'rgba(20,20,26,0.9)';
-    mapCtx.lineWidth = 2;
-    for (const r of city.roads) {
-      mapCtx.beginPath();
-      mapCtx.moveTo(r.x0 * sx, r.y0 * sy);
-      mapCtx.lineTo(r.x1 * sx, r.y1 * sy);
-      mapCtx.stroke();
+    mm.strokeStyle = '#565b66';
+    mm.lineWidth = 1;
+    for (let x = 0; x <= WORLD.width; x += 200) {
+      mm.beginPath();
+      mm.moveTo(x * sx, 0);
+      mm.lineTo(x * sx, h);
+      mm.stroke();
     }
-    // Mission target.
+    for (let y = 0; y <= WORLD.height; y += 200) {
+      mm.beginPath();
+      mm.moveTo(0, y * sy);
+      mm.lineTo(w, y * sy);
+      mm.stroke();
+    }
+    // Hidden packages (gold dots).
+    for (const pkg of S.packages) {
+      if (pkg.found) continue;
+      mm.fillStyle = '#ffd60a';
+      mm.beginPath();
+      mm.arc(pkg.x * sx, pkg.y * sy, 2.5, 0, Math.PI * 2);
+      mm.fill();
+    }
+    // Mission marker.
     if (S.mission.active) {
       const def = MISSIONS[S.mission.index];
-      const stage = def.stages[S.mission.stage];
-      const place = stage.target ? city.places[stage.target] : null;
-      if (place) {
-        const pulse = 5 + Math.sin(S.time * 5) * 2;
-        mapCtx.fillStyle = '#ffd166';
-        mapCtx.beginPath();
-        mapCtx.arc(place.x * sx, place.y * sy, pulse, 0, Math.PI * 2);
-        mapCtx.fill();
+      const stage = def?.stages[S.mission.stage];
+      let target = null;
+      if (stage?.type === 'steal' && S.mission.data.targetCar) target = S.mission.data.targetCar;
+      else if (stage?.target) target = S.city.places[stage.target];
+      if (target) {
+        mm.fillStyle = '#ffd60a';
+        mm.beginPath();
+        mm.arc(target.x * sx, target.y * sy, 4, 0, Math.PI * 2);
+        mm.fill();
+        mm.strokeStyle = '#ffd60a';
+        mm.beginPath();
+        mm.arc(target.x * sx, target.y * sy, 7, 0, Math.PI * 2);
+        mm.stroke();
       }
     }
-    // Cops.
-    mapCtx.fillStyle = '#ff595e';
+    // Cops (blue dots).
+    mm.fillStyle = '#4d8dff';
     for (const cop of S.cops) {
-      mapCtx.fillRect(cop.x * sx - 2, cop.y * sy - 2, 4, 4);
+      mm.beginPath();
+      mm.arc(cop.x * sx, cop.y * sy, 2.5, 0, Math.PI * 2);
+      mm.fill();
     }
-    // Player.
-    mapCtx.fillStyle = '#ffffff';
-    mapCtx.beginPath();
-    mapCtx.arc(S.player.x * sx, S.player.y * sy, 4, 0, Math.PI * 2);
-    mapCtx.fill();
-    mapCtx.strokeStyle = '#111111';
-    mapCtx.stroke();
+    // The player (white arrow).
+    const p = S.player;
+    mm.save();
+    mm.translate(p.x * sx, p.y * sy);
+    mm.rotate(p.angle);
+    mm.fillStyle = '#ffffff';
+    mm.beginPath();
+    mm.moveTo(6, 0);
+    mm.lineTo(-4, -4);
+    mm.lineTo(-4, 4);
+    mm.closePath();
+    mm.fill();
+    mm.restore();
+  }
+
+  function update() {
+    const p = S.player;
+    cashEl.textContent = Math.floor(p.cash).toLocaleString('en-US');
+    pkgEl.textContent = S.stats.packagesFound;
+    wantedEl.innerHTML = Array.from({ length: 5 }, (_, i) =>
+      `<span class="star ${i < S.wanted.level ? 'lit' : ''}">★</span>`).join('');
+    if (S.mission.active) {
+      const def = MISSIONS[S.mission.index];
+      missionTitle.textContent = `${def.title} — $${def.reward.toLocaleString('en-US')}`;
+      missionText.textContent = S.mission.text;
+    } else if (S.stats.missionsDone >= MISSIONS.length) {
+      missionTitle.textContent = 'VERDE BAY — COMPLETE';
+      missionText.textContent = 'Every mission done. The city is yours.';
+    } else {
+      missionTitle.textContent = 'VERDE BAY';
+      missionText.textContent = S.stats.missionsDone === 0
+        ? 'Steal a car — mission 1 starts at Sunset Garage'
+        : `Next: ${MISSIONS[S.stats.missionsDone].title}`;
+    }
+    const nitro = p.car ? Math.round((p.car.nitro / p.car.nitroMax) * 100) : 100;
+    nitroFill.style.width = `${nitro}%`;
+    speedEl.textContent = Math.round(Math.abs(p.speed || 0) * 0.22);
+    drawMinimap();
+    if (S.flags.busted) {
+      S.flags.busted = false;
+      bustedOverlay.classList.remove('hidden');
+    }
+    if (S.flags.wasted) {
+      S.flags.wasted = false;
+      wastedOverlay.classList.remove('hidden');
+    }
   }
 
   return {
-    update() {
-      cashEl.textContent = fmtCash(S.player.cash);
-      districtEl.textContent = districtNameAt(S.player.x, S.player.y);
-      objectiveEl.textContent = missionObjective(S);
-      const stars = '★'.repeat(S.wanted.level) + '☆'.repeat(5 - S.wanted.level);
-      wantedEl.textContent = stars;
-      wantedEl.className = S.wanted.level > 0 ? 'hot' : '';
-      healthBar.style.width = `${Math.max(0, S.player.health)}%`;
-      const speed = S.player.car ? Math.abs(Math.round(S.player.speed * 0.12)) : 0;
-      missionsEl.textContent = S.player.car
-        ? `${speed} mph · ${S.stats.missionsDone}/${MISSIONS.length} missions`
-        : `${S.stats.missionsDone}/${MISSIONS.length} missions`;
-      if (S.stats.missionsDone !== lastMissionsDone) {
-        lastMissionsDone = S.stats.missionsDone;
-        if (S.stats.missionsDone > 0 && S.stats.missionsDone < MISSIONS.length) {
-          bannerEl.textContent = `Mission ${S.stats.missionsDone} complete — next: ${MISSIONS[S.stats.missionsDone].title}`;
-          bannerTimer = 4;
-        } else if (S.stats.missionsDone >= MISSIONS.length) {
-          bannerEl.textContent = 'Story complete — Verde Bay is yours!';
-          bannerTimer = 8;
-        }
-      }
-      if (S.messageTimer > 0 && S.message) {
-        bannerEl.textContent = S.message;
-        bannerTimer = S.messageTimer;
-      }
-      if (bannerTimer > 0) {
-        bannerTimer -= 1 / 60;
-        bannerEl.style.opacity = '1';
-      } else {
-        bannerEl.style.opacity = '0';
-      }
-      drawMinimap();
-    },
-    showBanner(text, seconds) {
-      bannerEl.textContent = text;
-      bannerTimer = seconds ?? 4;
-    },
+    update,
+    banner,
+    showStart() { startOverlay.classList.remove('hidden'); },
+    hideStart() { startOverlay.classList.add('hidden'); },
+    hideBusted() { bustedOverlay.classList.add('hidden'); },
+    hideWasted() { wastedOverlay.classList.add('hidden'); },
   };
 }

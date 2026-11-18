@@ -1,7 +1,7 @@
-// Save / load through localStorage. The shape is tiny on purpose: the
-// number of finished missions and the player's cash, plus where they stood.
+// Save / load for Verde Bay: one localStorage key, plain JSON.
+// The smoke test drives writeSave -> loadSave -> applySave in the same process.
 
-const KEY = 'verde-bay-save-v1';
+import { SAVE_KEY } from './config.js';
 
 function storage() {
   try {
@@ -11,13 +11,13 @@ function storage() {
   }
 }
 
-/** Read the save, or null when there is none / it does not parse. */
+/** Read the saved game, or null when there is none / it is corrupt. */
 export function loadSave() {
   const store = storage();
   if (!store) return null;
   let raw = null;
   try {
-    raw = store.getItem(KEY);
+    raw = store.getItem(SAVE_KEY);
   } catch {
     return null;
   }
@@ -25,40 +25,37 @@ export function loadSave() {
   try {
     const data = JSON.parse(raw);
     if (typeof data !== 'object' || data === null) return null;
-    return {
-      missionIndex: typeof data.missionIndex === 'number' ? data.missionIndex : 0,
-      cash: typeof data.cash === 'number' ? data.cash : 0,
-      x: typeof data.x === 'number' ? data.x : 1100,
-      y: typeof data.y === 'number' ? data.y : 1000,
-    };
+    return data;
   } catch {
     return null;
   }
 }
 
-/** Write the current progress. Never throws (a full or blocked store is fine). */
+/** Write the current progress to localStorage. */
 export function writeSave(S) {
   const store = storage();
   if (!store) return;
   const data = {
-    missionIndex: S.stats.missionsDone,
     cash: S.player.cash,
-    x: Math.round(S.player.x),
-    y: Math.round(S.player.y),
+    missionIndex: S.mission.active ? S.mission.index : S.stats.missionsDone,
+    packagesFound: S.stats.packagesFound,
+    packages: S.packages.map((p) => p.found),
+    time: Math.floor(S.time),
+    version: 6,
   };
   try {
-    store.setItem(KEY, JSON.stringify(data));
+    store.setItem(SAVE_KEY, JSON.stringify(data));
   } catch {
-    // A blocked or full store must never break the game.
+    // Storage full or unavailable: the game keeps playing.
   }
 }
 
-/** Wipe the save (New Game). */
+/** Clear the saved game. */
 export function clearSave() {
   const store = storage();
   if (!store) return;
   try {
-    store.removeItem(KEY);
+    store.removeItem(SAVE_KEY);
   } catch {
     // Ignore.
   }
