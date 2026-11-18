@@ -1,41 +1,65 @@
-// VERDE BAY — save / load. One small JSON blob in localStorage:
-// the mission the player reached and the cash they hold.
+// Save / load through localStorage. The shape is tiny on purpose: the
+// number of finished missions and the player's cash, plus where they stood.
 
-import { SAVE_KEY } from './config.js';
+const KEY = 'verde-bay-save-v1';
 
 function storage() {
-  if (typeof localStorage !== 'undefined') return localStorage;
-  return null;
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }
 
-/** The saved blob, or null when there is none / it is unreadable. */
+/** Read the save, or null when there is none / it does not parse. */
 export function loadSave() {
+  const store = storage();
+  if (!store) return null;
+  let raw = null;
   try {
-    const s = storage();
-    if (!s) return null;
-    const raw = s.getItem(SAVE_KEY);
-    if (!raw) return null;
+    raw = store.getItem(KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
     const data = JSON.parse(raw);
     if (typeof data !== 'object' || data === null) return null;
     return {
       missionIndex: typeof data.missionIndex === 'number' ? data.missionIndex : 0,
       cash: typeof data.cash === 'number' ? data.cash : 0,
+      x: typeof data.x === 'number' ? data.x : 1100,
+      y: typeof data.y === 'number' ? data.y : 1000,
     };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
-/** Persist the current progress. Safe to call every mission completion. */
+/** Write the current progress. Never throws (a full or blocked store is fine). */
 export function writeSave(S) {
+  const store = storage();
+  if (!store) return;
+  const data = {
+    missionIndex: S.stats.missionsDone,
+    cash: S.player.cash,
+    x: Math.round(S.player.x),
+    y: Math.round(S.player.y),
+  };
   try {
-    const s = storage();
-    if (!s) return;
-    s.setItem(SAVE_KEY, JSON.stringify({
-      missionIndex: S.stats.missionsDone,
-      cash: S.player.cash,
-    }));
-  } catch (e) {
-    // Storage full or blocked: the game keeps running without a save.
+    store.setItem(KEY, JSON.stringify(data));
+  } catch {
+    // A blocked or full store must never break the game.
+  }
+}
+
+/** Wipe the save (New Game). */
+export function clearSave() {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.removeItem(KEY);
+  } catch {
+    // Ignore.
   }
 }

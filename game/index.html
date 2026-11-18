@@ -3,85 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VERDE BAY — Sunset Heist</title>
+<title>VERDE BAY 3D — an open-world crime game</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div id="game">
-  <canvas id="game-canvas"></canvas>
-
-  <div id="hud">
-    <div id="hud-left">
-      <div id="cash">$0</div>
-      <div id="hp"><div id="hp-fill"></div></div>
-      <div id="taxi"></div>
-    </div>
-    <div id="objective">Head to Mara's Garage to start the next job.</div>
-    <div id="hud-right">
-      <div id="stars">☆☆☆☆☆</div>
-      <div id="speed">0 mph</div>
-      <div id="car-name">On foot</div>
-      <div id="district">📍 Downtown</div>
-    </div>
-    <canvas id="minimap" width="220" height="180"></canvas>
-    <div id="prompt"></div>
-    <div id="hint">WASD move/drive &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; Mouse aim, click shoot &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; Esc pause</div>
-  </div>
-
-  <div id="menu" class="overlay">
-    <div class="panel">
-      <h1>VERDE BAY</h1>
-      <h2>— Sunset Heist —</h2>
-      <p class="story">One driver. Six jobs. A whole city that wants him caught.</p>
-      <p class="story">Cole Vega came back to Verde Bay broke. Mara Voss, the fixer who
-      runs the garage on 5th, has work — if Cole can drive, steal, and
-      disappear faster than the VBPD can catch him.</p>
-      <div class="buttons">
-        <button id="btn-new">▶ New Game</button>
-        <button id="btn-continue" class="hidden">Continue</button>
-        <button id="btn-how">How to play</button>
-      </div>
-      <p class="fine">An original game. Verde Bay, its people and its story are invented — no real city, no borrowed game.</p>
-    </div>
-  </div>
-
-  <div id="help" class="overlay hidden">
-    <div class="panel">
-      <h2>How to play</h2>
-      <p><b>WASD</b> — walk, or drive when you're in a car.<br>
-      <b>E</b> — get in or out of a car; start the next job at Mara's Garage.<br>
-      <b>Mouse</b> — aim. <b>Click</b> — shoot.<br>
-      <b>Space</b> — brake. <b>Esc</b> — pause.</p>
-      <p>Steal cars, lose the cops, run the six jobs for Mara. Grab a taxi
-      fare for extra cash on the side. Your progress saves after every job.</p>
-      <div class="buttons"><button id="btn-help-back">Back</button></div>
-    </div>
-  </div>
-
-  <div id="pause" class="overlay hidden">
-    <div class="panel">
-      <h2>Paused</h2>
-      <div class="buttons">
-        <button id="btn-resume">Resume</button>
-        <button id="btn-restart">Restart</button>
-        <button id="btn-menu">Main menu</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="wasted" class="overlay hidden">
-    <div class="panel">
-      <h2 class="red">WASTED</h2>
-      <p>Cole got patched up at Verde General. $100 lighter, back on the street.</p>
-    </div>
-  </div>
-
-  <div id="busted" class="overlay hidden">
-    <div class="panel">
-      <h2 class="red">BUSTED</h2>
-      <p>The VBPD hauled Cole in. $100 in fines — and the job is blown.</p>
-    </div>
+<div id="game"></div>
+<div id="hud"></div>
+<div id="menu">
+  <div id="menu-card">
+    <h1>VERDE BAY <span>3D</span></h1>
+    <p class="tagline">An island city. Eight jobs. One last ferry out.</p>
+    <p class="story">Verde Bay is a sun-soaked island city of four districts, a beach, a
+    marina and a bridge to Isla Verde. You are a wheelman with nothing but a
+    pistol and a reputation. Work for Milo, Rosa and Ferry — steal cars, run
+    cargo, crack vaults — and stay ahead of the Verde Bay police.</p>
+    <ul id="menu-missions"></ul>
+    <button id="start-btn">START ENGINE</button>
+    <p class="controls">WASD walk / drive &middot; E enter or steal a car &middot; Space or click
+    shoot &middot; Shift run &middot; M start next mission &middot; progress saves automatically</p>
   </div>
 </div>
 <script src="vendor/three.min.js"></script>

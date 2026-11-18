@@ -1,70 +1,73 @@
-# VERDE BAY — Sunset Heist
+# VERDE BAY 3D
 
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![rank](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-An open-world crime game in the spirit of GTA 6, built in three.js. One
-driver, six jobs, and a whole city that wants him caught.
-
-## The story
-
-Cole Vega came back to Verde Bay broke. Mara Voss, the fixer who runs the
-garage on 5th, has work — if Cole can drive, steal, and disappear faster
-than the VBPD can catch him. Six jobs, $9,000 on the table, ending with
-the Harbor Heist.
+An open-world crime game in the spirit of GTA 6, built for make.fun's
+**gta6-01** bounty. Verde Bay is a sun-soaked island city — four districts,
+a beach, a marina, and a bridge across the strait to Isla Verde — rendered
+in 3D with three.js at dusk. Everything is original: the city, the
+characters, the vehicles, the story, the art and the sounds.
 
 ## The city
 
-Verde Bay is a 2600×2000 open world with five districts: Downtown's towers,
-the Industrial harbor with its cannery and smokestacks, the Beach with its
-45 palms and the Marina del Sol, brick Oldtown, and the residential north
-around the Verde Bowl stadium. Traffic cruises the grid, pedestrians walk
-the sidewalks, and the sun sets over the water.
+- **Downtown** — glass towers and Liberty Plaza
+- **Old Town** — low brick streets and Rosa's Diner
+- **Industrial** — the Old Cannery and the Harbor Warehouse
+- **Beach** — palms, Sunset Pier and Club Marea
+- **Marina del Sol** — docks, the Ferry Terminal and the moored ferry
+- **Isla Verde** — the resort island across the Verde Bridge
 
-## What you can do
+## Systems
 
-- **Drive and steal** — any car on the street is yours if you can take it.
-  The Comet GT is the fastest thing in the city; the VBPD's Torro
-  interceptors are almost as fast.
-- **Wanted level 1–5** — steal, shoot, or pull a job and the police come:
-  interceptors that ram, foot cops that drag you in.
-- **Six story missions** — First Wheels, Courier Run, Payback, The Big
-  Score, Getaway Driver, and the Harbor Heist ($3,500).
-- **Combat** — mouse aim, click to shoot; gang members shoot back.
-- **Taxi fares** — pick up a fare, drop them off, pocket the cash.
-- **HUD + minimap** — cash, health, wanted stars, speed, district, and a
-  live minimap with the objective, the cops, and your taxi fare.
-- **Save** — progress saves after every job; continue from the menu.
+- Explore on foot and by car; steal any parked or traffic car (the police notice)
+- Traffic and pedestrians on a real street network
+- Wanted level 1–5 with police who chase, ram and bust you
+- Pistol combat with gang members who shoot back
+- 8 story missions, $18,000 in total (see below)
+- Taxi side-job, HUD with minimap, health and wanted stars
+- Save to localStorage — progress survives a reload
+- Synthesized WebAudio: engine hum, police sirens, gunfire, mission jingles
+- Particle effects: dust, smoke and sparks as soft glowing sprites
 
-## Controls
+## Story — 8 missions
 
-| Key | Action |
-| --- | --- |
-| WASD | Walk / drive |
-| E | Get in or out of a car; start the next job at Mara's Garage |
-| Mouse | Aim (click to shoot) |
-| Space | Brake |
-| Esc | Pause |
+1. **First Wheels** ($500) — Milo needs wheels. Borrow a Comet GT.
+2. **Diner Dash** ($500) — Rosa's coffee run across town.
+3. **The Cannery Job** ($1,500) — clear the crew, take the ledger.
+4. **Night Shift Taxi** ($1,000) — one fare, then vanish.
+5. **The Big Score** ($2,000) — crack the bank vault, lose the heat.
+6. **Harbor Heist** ($3,500) — the warehouse shipment and a getaway car.
+7. **Island Run** ($4,000) — smuggled cargo across the Verde Bridge, police on your tail.
+8. **The Last Ferry** ($5,000) — the terminal safe, one last getaway.
 
-## Play it
+## Play
 
 ```sh
 node serve.ts
 # open http://localhost:8080
 ```
 
-No build step, no network: `game/` is plain static files, three.js r160
-vendored under `game/vendor/`.
+WASD walk / drive · E enter or steal a car · Space or click shoot ·
+Shift run · M start the next mission. The game runs offline from static
+files — no network request, ever.
 
-## How it's built
+## Layout
 
-- `game/src/city.js` — the seeded city: districts, roads, named places
-- `game/src/sim.js` — the simulation: driving, traffic, peds, police, combat, taxi
-- `game/src/render3d.js` — the three.js renderer: chase camera, shadows, marker
-- `game/src/missions.js` — the six jobs and their stages
-- `game/src/hud.js` — HUD + minimap
-- `game/src/audio.js` — synthesized engine, sirens, gunshots (WebAudio, no files)
-- `main.ts` — hands the game in: copies `game/` + `screenshots/` and writes the dossier
-
-Built for the [make.fun GTA 6 bounty](https://make.fun/bounty/gta6-01).
+- `main.ts` — the entrypoint: copies `game/` and `screenshots/` and writes the dossier
+- `game/index.html` — the page (loads vendored three.js, then the game)
+- `game/src/config.js` — tuning constants
+- `game/src/util.js` — math and text helpers
+- `game/src/city.js` — the island city: districts, streets, buildings, palms, places
+- `game/src/sim.js` — the simulation: player, cars, traffic, police, combat, missions
+- `game/src/missions.js` — the 8-mission story
+- `game/src/render3d.js` — the three.js view with chase camera
+- `game/src/hud.js` — HUD, minimap, wanted stars, start menu
+- `game/src/input.js` — keyboard and mouse
+- `game/src/audio.js` — synthesized WebAudio sound
+- `game/src/effects.js` — soft-glow particle sprites
+- `game/src/shots.js` — screenshot modes
+- `game/src/save.js` — localStorage save / load
+- `game/vendor/three.min.js` — vendored three.js r160
+- `screenshots/` — 4 renders of the game itself

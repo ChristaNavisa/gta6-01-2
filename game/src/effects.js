@@ -1,49 +1,74 @@
-// VERDE BAY — short-lived visual effects: particles, bullet tracers and
-// floating text. Pure data, no DOM: the sim spawns them, the renderer
-// draws them, and update() ages them out.
+// Particle effects for the 3D view: dust behind fast cars, smoke from
+// damaged engines, sparks from gunfire. Every particle is a soft radial
+// sprite — a canvas-generated glow texture on THREE.Points — never a bare
+// PointsMaterial, which renders as hard white squares.
 
-export function createEffects() {
-  return { particles: [], tracers: [], floaters: [] };
+/** Build a 64px radial glow texture (white core fading to transparent). */
+function makeGlowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.7)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(canvas);
 }
 
-/** A burst of sparks / smoke at (x, y, z). */
-export function burst(fx, x, y, z, color, n, power) {
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const sp = (0.3 + Math.random() * 0.7) * power;
-    fx.particles.push({
-      x, y, z,
-      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: Math.random() * power * 0.7,
-      life: 0.5 + Math.random() * 0.5, maxLife: 1,
-      color, size: 2 + Math.random() * 3,
-    });
-  }
-  if (fx.particles.length > 400) fx.particles.splice(0, fx.particles.length - 400);
-}
+/** Create the effect system bound to a three.js scene. */
+export function createEffects(scene) {
+  const texture = makeGlowTexture();
+  const MAX = 400;
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(MAX * 3);
+  const colors = new Float32Array(MAX * 3);
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const material = new THREE.PointsMaterial({
+    size: 13,
+    map: texture,
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  scene.add(points);
 
-/** A bright line from a gun to its hit, fading fast. */
-export function tracer(fx, x1, y1, z1, x2, y2, z2, color) {
-  fx.tracers.push({ x1, y1, z1, x2, y2, z2, life: 0.12, color: color || '#ffd76a' });
-  if (fx.tracers.length > 24) fx.tracers.shift();
-}
+  const tmpColor = new THREE.Color();
 
-/** Text that rises and fades above a spot (cash, pickups). */
-export function floater(fx, x, y, text, color) {
-  fx.floaters.push({ x, y, text, color: color || '#ffd76a', life: 1.4 });
-  if (fx.floaters.length > 12) fx.floaters.shift();
-}
-
-export function updateEffects(fx, dt) {
-  for (const p of fx.particles) {
-    p.life -= dt;
-    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-    p.vz -= 60 * dt; // sparks fall back down
-    p.vx *= 0.98; p.vy *= 0.98;
-    if (p.z < 0.5) { p.z = 0.5; p.vz = 0; }
-  }
-  fx.particles = fx.particles.filter((p) => p.life > 0);
-  for (const t of fx.tracers) t.life -= dt;
-  fx.tracers = fx.tracers.filter((t) => t.life > 0);
-  for (const f of fx.floaters) { f.life -= dt; f.y -= 14 * dt; }
-  fx.floaters = fx.floaters.filter((f) => f.life > 0);
+  return {
+    /** Sync the points cloud with the sim's particle list (called each frame). */
+    update(S) {
+      const list = S.particles;
+      const n = Math.min(list.length, MAX);
+      for (let i = 0; i < n; i++) {
+        const pt = list[i];
+        const fade = 1 - pt.life / pt.maxLife;
+        positions[i * 3] = pt.x;
+        positions[i * 3 + 1] = pt.z;
+        positions[i * 3 + 2] = -pt.y;
+        tmpColor.set(pt.color);
+        // Fade the color toward black: with additive blending that fades the glow out.
+        colors[i * 3] = tmpColor.r * fade;
+        colors[i * 3 + 1] = tmpColor.g * fade;
+        colors[i * 3 + 2] = tmpColor.b * fade;
+      }
+      // Park the rest far below the world.
+      for (let i = n; i < MAX; i++) {
+        positions[i * 3 + 1] = -1000;
+        colors[i * 3] = 0;
+        colors[i * 3 + 1] = 0;
+        colors[i * 3 + 2] = 0;
+      }
+      geometry.attributes.position.needsUpdate = true;
+      geometry.attributes.color.needsUpdate = true;
+      geometry.setDrawRange(0, n);
+    },
+  };
 }

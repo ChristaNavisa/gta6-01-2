@@ -1,121 +1,120 @@
-// VERDE BAY — synthesized sound. Everything is WebAudio oscillators and
-// filtered noise: no audio files to load. Silent until the player clicks
-// (browsers block audio before a gesture), and every call is guarded so
-// a missing AudioContext never breaks the game.
+// All sound is synthesized with WebAudio: no audio files, nothing fetched.
+// A soft engine hum follows the car's speed, a two-tone siren follows the
+// wanted level, and one-shots cover gunfire, pickups and mission jingles.
+// Everything is guarded: a browser without audio still plays silently.
 
+/** Create the audio engine. Call resume() from a user gesture. */
 export function createAudio() {
-  const A = {
+  const audio = {
     ctx: null,
     master: null,
     engineOsc: null,
     engineGain: null,
     sirenOsc: null,
     sirenGain: null,
-    sirenOn: false,
-    sirenT: 0,
-    muted: false,
+    sirenTimer: 0,
+    started: false,
   };
 
-  /** Call from a user gesture (click / key). Safe to call repeatedly. */
-  A.ensure = function ensure() {
-    if (A.ctx) {
-      if (A.ctx.state === 'suspended') A.ctx.resume().catch(() => {});
-      return;
-    }
+  function ensure() {
+    if (audio.ctx) return true;
     try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      A.ctx = new Ctx();
-      A.master = A.ctx.createGain();
-      A.master.gain.value = 0.35;
-      A.master.connect(A.ctx.destination);
-      A.engineOsc = A.ctx.createOscillator();
-      A.engineOsc.type = 'sawtooth';
-      A.engineOsc.frequency.value = 50;
-      A.engineGain = A.ctx.createGain();
-      A.engineGain.gain.value = 0;
-      const lp = A.ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = 420;
-      A.engineOsc.connect(lp);
-      lp.connect(A.engineGain);
-      A.engineGain.connect(A.master);
-      A.engineOsc.start();
-      A.sirenOsc = A.ctx.createOscillator();
-      A.sirenOsc.type = 'sine';
-      A.sirenOsc.frequency.value = 700;
-      A.sirenGain = A.ctx.createGain();
-      A.sirenGain.gain.value = 0;
-      A.sirenOsc.connect(A.sirenGain);
-      A.sirenGain.connect(A.master);
-      A.sirenOsc.start();
-    } catch (e) {
-      A.ctx = null;
+      const Ctx = window.AudioContext ?? window.webkitAudioContext;
+      if (!Ctx) return false;
+      audio.ctx = new Ctx();
+      audio.master = audio.ctx.createGain();
+      audio.master.gain.value = 0.35;
+      audio.master.connect(audio.ctx.destination);
+      // Engine: a low sawtooth whose pitch follows speed.
+      audio.engineOsc = audio.ctx.createOscillator();
+      audio.engineOsc.type = 'sawtooth';
+      audio.engineOsc.frequency.value = 55;
+      audio.engineGain = audio.ctx.createGain();
+      audio.engineGain.gain.value = 0;
+      const engineFilter = audio.ctx.createBiquadFilter();
+      engineFilter.type = 'lowpass';
+      engineFilter.frequency.value = 420;
+      audio.engineOsc.connect(engineFilter);
+      engineFilter.connect(audio.engineGain);
+      audio.engineGain.connect(audio.master);
+      audio.engineOsc.start();
+      // Siren: a sine that wails between two notes.
+      audio.sirenOsc = audio.ctx.createOscillator();
+      audio.sirenOsc.type = 'sine';
+      audio.sirenOsc.frequency.value = 720;
+      audio.sirenGain = audio.ctx.createGain();
+      audio.sirenGain.gain.value = 0;
+      audio.sirenOsc.connect(audio.sirenGain);
+      audio.sirenGain.connect(audio.master);
+      audio.sirenOsc.start();
+      return true;
+    } catch {
+      return false;
     }
-  };
-
-  /** Engine hum follows how fast the player drives (0..1). */
-  A.engine = function engine(speed01) {
-    if (!A.ctx || !A.engineOsc) return;
-    A.engineOsc.frequency.value = 48 + speed01 * 130;
-    A.engineGain.gain.value = 0.02 + speed01 * 0.05;
-  };
-
-  /** Two-tone police siren while the player is wanted. */
-  A.siren = function siren(on, dt) {
-    if (!A.ctx || !A.sirenOsc) return;
-    A.sirenOn = on;
-    A.sirenGain.gain.value = on ? 0.045 : 0;
-    if (on) {
-      A.sirenT += dt;
-      A.sirenOsc.frequency.value = (Math.floor(A.sirenT * 2.2) % 2 === 0) ? 660 : 880;
-    }
-  };
-
-  function blip(freq, dur, type, vol) {
-    if (!A.ctx) return;
-    try {
-      const o = A.ctx.createOscillator();
-      const g = A.ctx.createGain();
-      o.type = type || 'sine';
-      o.frequency.value = freq;
-      g.gain.setValueAtTime(vol || 0.2, A.ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, A.ctx.currentTime + dur);
-      o.connect(g); g.connect(A.master);
-      o.start(); o.stop(A.ctx.currentTime + dur);
-    } catch (e) { /* audio is decoration, never fatal */ }
   }
 
-  function noise(dur, vol, freq) {
-    if (!A.ctx) return;
+  function blip(freq, dur, type, vol, slideTo) {
+    if (!audio.ctx) return;
     try {
-      const len = Math.floor(A.ctx.sampleRate * dur);
-      const buf = A.ctx.createBuffer(1, len, A.ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-      const src = A.ctx.createBufferSource();
-      src.buffer = buf;
-      const f = A.ctx.createBiquadFilter();
-      f.type = 'lowpass'; f.frequency.value = freq || 1800;
-      const g = A.ctx.createGain();
-      g.gain.value = vol || 0.25;
-      src.connect(f); f.connect(g); g.connect(A.master);
-      src.start();
-    } catch (e) { /* audio is decoration, never fatal */ }
+      const t = audio.ctx.currentTime;
+      const osc = audio.ctx.createOscillator();
+      const gain = audio.ctx.createGain();
+      osc.type = type ?? 'square';
+      osc.frequency.setValueAtTime(freq, t);
+      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+      gain.gain.setValueAtTime(vol ?? 0.2, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.connect(gain);
+      gain.connect(audio.master);
+      osc.start(t);
+      osc.stop(t + dur + 0.02);
+    } catch {
+      // Sound is garnish; never let it break the game.
+    }
   }
 
-  /** Gunshot crack. */
-  A.shot = function shot() { noise(0.14, 0.3, 2400); };
-  /** Pickup / cash blip. */
-  A.blip = function blipSound() { blip(880, 0.12, 'sine', 0.22); };
-  /** Crash thud. */
-  A.crash = function crash() { noise(0.25, 0.3, 500); };
-  /** Mission-complete arpeggio. */
-  A.jingle = function jingle() {
-    if (!A.ctx) return;
-    [523, 659, 784, 1046].forEach((f, i) => {
-      setTimeout(() => blip(f, 0.22, 'triangle', 0.2), i * 110);
-    });
+  return {
+    /** Start (or resume) the audio context. Call from a click or keypress. */
+    resume() {
+      if (!ensure()) return;
+      audio.started = true;
+      if (audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {});
+    },
+    /** Pistol shot. */
+    shot() {
+      blip(220, 0.12, 'square', 0.25, 60);
+    },
+    /** Pickup / objective done. */
+    pickup() {
+      blip(660, 0.09, 'sine', 0.2);
+      setTimeout(() => blip(880, 0.14, 'sine', 0.2), 90);
+    },
+    /** Mission complete jingle. */
+    jingle() {
+      [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => blip(f, 0.16, 'triangle', 0.22), i * 110));
+    },
+    /** Busted / failed sting. */
+    sting() {
+      blip(196, 0.5, 'sawtooth', 0.2, 98);
+    },
+    /** Per-frame: engine pitch from speed, siren wail from wanted level. */
+    update(S) {
+      if (!audio.ctx || !audio.started) return;
+      try {
+        const speed = Math.abs(S.player.speed ?? 0);
+        audio.engineGain.gain.value = S.player.car ? 0.05 + Math.min(0.09, speed / 9000) : 0;
+        audio.engineOsc.frequency.value = 50 + speed * 0.09;
+        if (S.wanted.level > 0) {
+          audio.sirenTimer += 1 / 60;
+          const wail = Math.sin(audio.sirenTimer * 3.2) > 0 ? 740 : 540;
+          audio.sirenOsc.frequency.value = wail;
+          audio.sirenGain.gain.value = 0.045;
+        } else {
+          audio.sirenGain.gain.value = 0;
+        }
+      } catch {
+        // Ignore.
+      }
+    },
   };
-
-  return A;
 }

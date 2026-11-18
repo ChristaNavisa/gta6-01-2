@@ -1,12 +1,15 @@
-// VERDE BAY — tiny static server for local playtesting.
-// Serves game/ at http://localhost:8080. Node standard library only.
-// Run: node serve.ts (then open http://localhost:8080 in a browser).
-import http from 'node:http';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { join, extname, normalize } from 'node:path';
+// VERDE BAY 3D — a tiny static file server for local play-testing.
+// Serves this directory's game/ at http://localhost:8080. Node standard
+// library only; nothing is installed, nothing leaves the machine.
 
-const GAME_DIR = new URL('./game/', import.meta.url).pathname;
-const PORT = parseInt(process.argv[2] || '8080', 10);
+import { createServer } from 'node:http';
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { join, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = fileURLToPath(new URL('.', import.meta.url));
+const gameDir = join(here, 'game');
+const port = parseInt(process.env.PORT ?? '8080', 10);
 
 const MIME = {
   '.html': 'text/html',
@@ -19,19 +22,18 @@ const MIME = {
   '.jpeg': 'image/jpeg',
 };
 
-const server = http.createServer((req, res) => {
-  const url = decodeURIComponent((req.url || '/').split('?')[0]);
-  const file = join(GAME_DIR, url === '/' ? 'index.html' : url);
-  const safe = normalize(file);
-  if (!safe.startsWith(GAME_DIR) || !existsSync(safe) || statSync(safe).isDirectory()) {
+const server = createServer((req, res) => {
+  const url = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  const file = join(gameDir, url === '/' ? 'index.html' : url);
+  if (!file.startsWith(gameDir) || !existsSync(file) || statSync(file).isDirectory()) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('not found');
     return;
   }
-  res.writeHead(200, { 'Content-Type': MIME[extname(safe)] || 'application/octet-stream' });
-  createReadStream(safe).pipe(res);
+  res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream' });
+  createReadStream(file).pipe(res);
 });
 
-server.listen(PORT, () => {
-  console.log(`VERDE BAY serving game/ at http://localhost:${PORT}/`);
+server.listen(port, () => {
+  console.log(`VERDE BAY 3D at http://localhost:${port}/`);
 });

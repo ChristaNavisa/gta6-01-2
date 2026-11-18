@@ -1,81 +1,77 @@
-// VERDE BAY — screenshot poses. The shots script loads index.html with
-// ?shot=<mode>&seed=1; main.js calls poseShot() once, then renders.
-// Each pose puts the game in a state that shows a different system:
-// the menu over the city, driving, a police chase, a mission on foot.
+// Screenshot modes for ?shot=start|drive|chase|mission&seed=N. Each one puts
+// the game in a readable state for the cover sheet: the city on foot, a car
+// on the road, a police chase with wanted stars, and a mission in progress
+// with the gold marker beam. main.js calls applyShot after the game boots.
 
-import { makeCar, update } from './sim.js';
 import { startMission } from './missions.js';
-import { angleTo, dist } from './util.js';
+import { makeCar } from './sim.js';
 
-const STEP = 1 / 60;
-
-function stepN(S, n) { for (let i = 0; i < n; i++) update(S, STEP); }
-
-function putInCar(S, car) {
+/** Put the game in the state a screenshot mode wants. */
+export function applyShot(S, mode) {
   const p = S.player;
-  p.car = car;
-  p.onFoot = false;
-  p.x = car.x; p.y = car.y; p.angle = car.angle;
-  car.owner = 'player';
-}
+  S.flags.menu = false;
+  S.flags.started = true;
+  S.flags.shot = mode;
 
-/** Pose the game for one of the four screenshots. */
-export function poseShot(S, mode) {
-  const p = S.player;
   if (mode === 'start') {
-    // Menu over a living city: traffic and peds move behind the panel.
-    S.flags.menu = true;
-    S.flags.started = false;
-    return;
-  }
-
-  S.flags.menu = false;
-  S.flags.started = true;
-
-  if (mode === 'drive') {
-    startMission(S, 1); // Courier Run: "Pick up the package at Sunset Diner"
-    const car = makeCar('sports', 1170, 650, Math.PI / 2, '#d23b2e', 'player');
-    car.speed = 130;
+    // On foot at Liberty Plaza, downtown skyline behind.
+    p.x = 1100;
+    p.y = 1000;
+    p.angle = -Math.PI / 2;
+    p.aimAngle = p.angle;
+  } else if (mode === 'drive') {
+    // Driving a sportscar down the downtown avenue.
+    const car = makeCar('sport', 1100, 900, -Math.PI / 2, '#d90429', 'player');
     S.cars.push(car);
-    putInCar(S, car);
-    return;
-  }
-
-  if (mode === 'chase') {
-    startMission(S, 4); // Getaway Driver: "Drive to Verde Bowl"
-    const car = makeCar('sports', 1170, 910, -Math.PI / 2, '#d23b2e', 'player');
-    car.speed = 210;
+    p.car = car;
+    p.onFoot = false;
+    car.speed = 420;
+    p.x = car.x;
+    p.y = car.y;
+    p.angle = car.angle;
+  } else if (mode === 'chase') {
+    // Wanted 3, two cop cars closing in, player driving east down the
+    // y=1050 avenue toward the bridge — a clear run so the camera, the
+    // player car and the cops all read in one frame.
+    const car = makeCar('sport', 2050, 1050, 0, '#d90429', 'player');
     S.cars.push(car);
-    putInCar(S, car);
-    S.wanted.heat = 90;
+    p.car = car;
+    p.onFoot = false;
+    car.speed = 520;
+    p.x = car.x;
+    p.y = car.y;
+    p.angle = car.angle;
     S.wanted.level = 3;
-    // Two interceptors closing in from behind.
-    for (const [x, y] of [[1170, 910 + 190], [1130, 910 + 280]]) {
-      const cop = makeCar('police', x, y, -Math.PI / 2, '#1e3a5f', 'police');
-      cop.speed = 260;
+    S.wanted.heat = 100;
+    S.lastCrimeAt = S.time;
+    for (const [cx, cy] of [[1850, 1050], [1750, 1085]]) {
+      const cop = makeCar('cop', cx, cy, 0, '#1b263b', 'cop');
+      cop.driver = 'cop';
+      cop.speed = 500;
+      S.cops.push(cop);
       S.cars.push(cop);
-      S.cops.push({ car: cop, kind: 'cop', catchTimer: 0 });
     }
-    return;
+  } else if (mode === 'mission') {
+    // Mission 7 (Island Run) mid-delivery: the bridge chase, beam on the depot.
+    startMission(S, 6);
+    S.mission.stage = 2;
+    const car = makeCar('sport', 2500, 1050, 0, '#d90429', 'player');
+    S.cars.push(car);
+    p.car = car;
+    p.onFoot = false;
+    car.speed = 480;
+    p.x = car.x;
+    p.y = car.y;
+    p.angle = car.angle;
+    S.wanted.level = 2;
+    S.wanted.heat = 100;
+    S.lastCrimeAt = S.time;
+    const cop = makeCar('cop', 2100, 980, 0, '#1b263b', 'cop');
+    cop.driver = 'cop';
+    cop.speed = 500;
+    S.cops.push(cop);
+    S.cars.push(cop);
+    // The stage was forced to the delivery leg: show its text, not the pickup's.
+    S.events.push('Island Run: Deliver the cargo to Isla Verde Depot');
   }
-
-  if (mode === 'mission') {
-    startMission(S, 2); // Payback: goto the club, then the gang shows up
-    const club = S.city.places.club;
-    p.x = club.x; p.y = club.y + 60;
-    p.onFoot = true; p.car = null;
-    stepN(S, 90); // walk the goto stage forward so the gang spawns
-    const gang = (S.mission.data && S.mission.data.gang) || [];
-    if (gang.length > 0) {
-      const g0 = gang[0];
-      p.x = g0.x - 130; p.y = g0.y + 40;
-      p.angle = angleTo(p.x, p.y, g0.x, g0.y);
-      S.aimAngle = p.angle;
-    }
-    return;
-  }
-
-  // Unknown mode: just start the game.
-  S.flags.menu = false;
-  S.flags.started = true;
 }

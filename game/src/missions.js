@@ -1,191 +1,204 @@
-// VERDE BAY — the story: six jobs for Cole Vega, from a stolen Comet GT
-// to the Harbor Heist. Missions are data; the sim drives them through
-// startMission / updateMission, and the smoke test plays them all.
-
-import { PLACE_NAMES } from './city.js';
-import { WANTED } from './config.js';
-import { dist } from './util.js';
-import { writeSave } from './save.js';
+// The story of VERDE BAY: 8 missions, $18,000 in total. Each mission is a
+// list of stages; the sim drives them by stage type:
+//   goto        reach the target place on foot or by car
+//   pickup      reach the target place to pick something up
+//   deliver     reach the target place carrying the goods
+//   driveTo     reach the target place while driving a car
+//   grab        hold the target point for a few seconds (a heist: raises wanted)
+//   steal       get into the target car and bring it to the target place
+//   eliminate   take out every member of the gang at the target place
+//   escape      reach the target place once the heat is off (wanted 0)
+//   escapeArea  get a good distance away from the target place
+// A stage may carry `crime`: the wanted level set when the stage begins.
 
 export const MISSIONS = [
   {
     id: 'first-wheels',
     title: 'First Wheels',
-    reward: 300,
+    contact: 'Milo',
+    reward: 500,
+    brief: "Milo needs wheels. Borrow a car from the garage lot and bring it to the stadium. Don't ask whose it is.",
     stages: [
-      { type: 'steal', target: 'diner' },
-      { type: 'driveTo', target: 'garage' },
+      { type: 'goto', target: 'garage', text: 'Go to Verde Motors Garage' },
+      { type: 'steal', target: 'garage', spawn: 'garage', text: 'Take the Comet GT and drive it to the stadium' },
+      { type: 'driveTo', target: 'stadium', text: 'Deliver the car to Bay Stadium' },
     ],
   },
   {
-    id: 'courier',
-    title: 'Courier Run',
-    reward: 600,
+    id: 'diner-dash',
+    title: 'Diner Dash',
+    contact: "Rosa",
+    reward: 500,
+    brief: "Rosa's diner is out of coffee and the hotel is out of patience. Run the delivery across town before it gets cold.",
     stages: [
-      { type: 'pickup', target: 'diner' },
-      { type: 'deliver', target: 'stadium' },
+      { type: 'pickup', target: 'diner', text: "Pick up the order at Rosa's Diner" },
+      { type: 'deliver', target: 'hotel', text: 'Deliver the order to Hotel Miramar' },
+      { type: 'goto', target: 'plaza', text: 'Meet Rosa at Liberty Plaza' },
     ],
   },
   {
-    id: 'payback',
-    title: 'Payback',
-    reward: 900,
+    id: 'cannery-job',
+    title: 'The Cannery Job',
+    contact: 'Milo',
+    reward: 1500,
+    brief: 'The cannery crew is skimming the docks. Clear them out, grab the ledger from the warehouse and drop it at the marina.',
     stages: [
-      { type: 'goto', target: 'club' },
-      { type: 'eliminate', target: 'club' },
-      { type: 'escapeArea', target: 'club' },
+      { type: 'goto', target: 'cannery', text: 'Go to the Old Cannery' },
+      { type: 'eliminate', target: 'cannery', text: 'Clear out the cannery crew' },
+      { type: 'pickup', target: 'warehouse', text: 'Pick up the ledger at the Harbor Warehouse' },
+      { type: 'deliver', target: 'marina', text: 'Deliver the ledger to Marina del Sol' },
+    ],
+  },
+  {
+    id: 'night-taxi',
+    title: 'Night Shift Taxi',
+    contact: 'Ferry',
+    reward: 1000,
+    brief: 'Ferry runs a cab on the side. Pick up the fare at Sunset Pier, drop them at Club Marea, then vanish before the cops ask questions.',
+    stages: [
+      { type: 'driveTo', target: 'pier', text: 'Drive to Sunset Pier' },
+      { type: 'pickup', target: 'pier', text: 'Pick up the fare at the pier' },
+      { type: 'deliver', target: 'club', text: 'Drop the fare at Club Marea' },
+      { type: 'escapeArea', target: 'club', text: 'Get clear of the club district' },
     ],
   },
   {
     id: 'big-score',
     title: 'The Big Score',
-    reward: 1200,
+    contact: 'Milo',
+    reward: 2000,
+    brief: 'Verde Bay Bank keeps its vault light on Fridays. Hit it fast, then lose the heat at the marina.',
     stages: [
-      { type: 'goto', target: 'bank' },
-      { type: 'grab', target: 'bank' },
-      { type: 'escape', target: 'marina' },
-    ],
-  },
-  {
-    id: 'getaway',
-    title: 'Getaway Driver',
-    reward: 2500,
-    stages: [
-      { type: 'driveTo', target: 'stadium' },
-      { type: 'escapeArea', target: 'stadium' },
+      { type: 'goto', target: 'bank', text: 'Go to Verde Bay Bank' },
+      { type: 'grab', target: 'bank', crime: 2, hold: 2.0, text: 'Hold the vault — grab the cash' },
+      { type: 'escape', target: 'marina', text: 'Lose the heat at Marina del Sol' },
     ],
   },
   {
     id: 'harbor-heist',
     title: 'Harbor Heist',
+    contact: 'Ferry',
     reward: 3500,
+    brief: 'The harbor warehouse holds a shipment worth a fortune. Crack it, take the getaway car and disappear into the marina.',
     stages: [
-      { type: 'goto', target: 'warehouse' },
-      { type: 'grab', target: 'warehouse' },
-      { type: 'escape', target: 'marina' },
+      { type: 'goto', target: 'warehouse', text: 'Go to the Harbor Warehouse' },
+      { type: 'grab', target: 'warehouse', crime: 2, hold: 2.0, text: 'Hold the warehouse — crack the shipment' },
+      { type: 'steal', target: 'garage', spawn: 'warehouse', text: 'Take the getaway car to the garage' },
+      { type: 'escape', target: 'marina', text: 'Lose the heat at Marina del Sol' },
+    ],
+  },
+  {
+    id: 'island-run',
+    title: 'Island Run',
+    contact: 'Milo',
+    reward: 4000,
+    brief: 'Smuggled cargo has to cross the Verde Bridge to Isla Verde — and the police know the route. Outrun them across the strait.',
+    stages: [
+      { type: 'pickup', target: 'cannery', text: 'Pick up the cargo at the Old Cannery' },
+      { type: 'driveTo', target: 'bridge', crime: 2, text: 'Cross the Verde Bridge — outrun the police' },
+      { type: 'deliver', target: 'islandDepot', text: 'Deliver the cargo to Isla Verde Depot' },
+      { type: 'escape', target: 'stadium', text: 'Lose the heat at Bay Stadium' },
+    ],
+  },
+  {
+    id: 'last-ferry',
+    title: 'The Last Ferry',
+    contact: 'Ferry',
+    reward: 5000,
+    brief: 'One last job. The ferry terminal safe holds the payout of a decade — crack it, take the getaway car and never look back.',
+    stages: [
+      { type: 'goto', target: 'ferry', text: 'Go to the Ferry Terminal' },
+      { type: 'grab', target: 'ferry', crime: 3, hold: 2.5, text: 'Hold the terminal — crack the safe' },
+      { type: 'steal', target: 'garage', spawn: 'ferry', text: 'Take the getaway car to the garage' },
+      { type: 'escape', target: 'marina', text: 'Lose the heat at Marina del Sol' },
     ],
   },
 ];
 
-const ARRIVE = 70;
-const STEAL_ARRIVE = 90;
-const ESCAPE_DIST = 320;
+/** The place a mission stage points at (null for stages without one). */
+export function stagePlace(S, stage) {
+  if (!stage || !stage.target) return null;
+  return S.city.places[stage.target] ?? null;
+}
 
-function placeName(key) { return PLACE_NAMES[key] || key; }
+/** One-line objective text for the HUD. */
+export function missionObjective(S) {
+  if (!S.mission.active) {
+    if (S.stats.missionsDone >= MISSIONS.length) return 'Story complete — Verde Bay is yours.';
+    return `Next mission: ${MISSIONS[S.stats.missionsDone].title} (${MISSIONS[S.stats.missionsDone].reward}$) — press M to start`;
+  }
+  const def = MISSIONS[S.mission.index];
+  const stage = def.stages[S.mission.stage];
+  return `${def.title}: ${stage.text}`;
+}
 
 function beginStage(S) {
   const def = MISSIONS[S.mission.index];
   const stage = def.stages[S.mission.stage];
-  if (!stage) return;
-  const place = stage.target ? S.city.places[stage.target] : null;
-  if (stage.type === 'steal' && place) {
+  S.mission.timer = 0;
+  S.mission.holdTimer = 0;
+  if (stage.crime) {
+    S.wanted.level = Math.max(S.wanted.level, stage.crime);
+    S.wanted.heat = 100;
+    S.events.push(`Wanted level ${S.wanted.level} — the police are coming!`);
+  }
+  if (stage.type === 'steal') {
+    const spawn = S.city.places[stage.spawn] ?? S.city.places.garage;
     const car = {
-      type: 'sports', name: 'Comet GT',
-      x: place.x + 30, y: place.y, angle: 0, speed: 0,
-      color: '#d23b2e', owner: 'target',
-      maxSpeed: 330, accel: 115, turn: 2.9, length: 54, width: 26,
-      hp: 100, wheelSpin: 0,
+      id: `target-${def.id}`,
+      type: 'sport',
+      x: spawn.x + 40,
+      y: spawn.y + 20,
+      angle: 0,
+      speed: 0,
+      color: '#d90429',
+      owner: 'target',
+      driver: 'parked',
+      hp: 100,
     };
     S.cars.push(car);
     S.mission.data.targetCar = car;
-  } else if (stage.type === 'eliminate' && place) {
+    S.events.push('A red Comet GT is waiting — take it!');
+  }
+  if (stage.type === 'eliminate') {
+    const at = S.city.places[stage.target];
     const gang = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       gang.push({
-        x: place.x + (i - 1) * 46, y: place.y + 30 + (i % 2) * 40,
-        angle: 0, speed: 0, hp: 100, kind: 'gang',
-        color: '#7a1f1f', state: 'guard', shootTimer: 1 + i * 0.5,
+        x: at.x + (i % 2 === 0 ? -50 : 50),
+        y: at.y + (i < 2 ? -50 : 50),
+        angle: 0,
+        hp: 50,
+        speed: 40,
+        shootTimer: 1 + i * 0.4,
       });
     }
     S.mission.data.gang = gang;
-  } else if (stage.type === 'grab') {
-    // The grab is the crime: the vault job puts the cops on you at once.
-    S.wanted.heat = Math.max(S.wanted.heat, WANTED.crimeHeat.grab);
-    S.wanted.level = Math.min(WANTED.maxLevel, Math.floor(S.wanted.heat / WANTED.heatPerLevel));
-    S.events.push({ type: 'crime', level: S.wanted.level });
+    S.events.push('The crew is here — clear them out!');
   }
+  S.events.push(stage.text);
 }
 
-function completeMission(S) {
-  const def = MISSIONS[S.mission.index];
-  S.player.cash += def.reward;
-  S.stats.missionsDone += 1;
-  S.mission.active = false;
-  S.mission.index = S.mission.index + 1;
-  S.mission.stage = 0;
-  S.mission.data = {};
-  S.events.push({ type: 'mission-complete', title: def.title, reward: def.reward });
-  writeSave(S);
-}
-
-export function failMission(S) {
-  if (!S.mission.active) return;
-  S.mission.active = false;
-  S.mission.stage = 0;
-  S.mission.data = {};
-  S.events.push({ type: 'mission-failed' });
-}
-
-export function startMission(S, mi) {
-  if (mi < 0 || mi >= MISSIONS.length) return;
-  S.mission = { active: true, index: mi, stage: 0, data: {} };
+/** Start mission i (0-based). Sets up the first stage. */
+export function startMission(S, i) {
+  const def = MISSIONS[i];
+  S.mission = { active: true, index: i, stage: 0, data: {}, timer: 0, holdTimer: 0 };
+  S.events.push(`${def.title} — ${def.contact}: ${def.brief}`);
   beginStage(S);
 }
 
-export function updateMission(S, dt) {
-  if (!S.mission.active) return;
+/** Move to the next stage of the active mission (called by the sim). */
+export function nextStage(S) {
   const def = MISSIONS[S.mission.index];
-  if (!def) { S.mission.active = false; return; }
-  const stage = def.stages[S.mission.stage];
-  if (!stage) { completeMission(S); return; }
-  const p = S.player;
-  const px = p.car ? p.car.x : p.x;
-  const py = p.car ? p.car.y : p.y;
-  const place = stage.target ? S.city.places[stage.target] : null;
-
-  let done = false;
-  if (stage.type === 'goto' || stage.type === 'pickup' || stage.type === 'deliver'
-    || stage.type === 'driveTo' || stage.type === 'grab') {
-    if (place && dist(px, py, place.x, place.y) < ARRIVE) done = true;
-  } else if (stage.type === 'steal') {
-    const car = S.mission.data.targetCar;
-    const g = S.city.places.garage;
-    if (car && dist(car.x, car.y, g.x, g.y) < STEAL_ARRIVE) done = true;
-  } else if (stage.type === 'eliminate') {
-    const gang = S.mission.data.gang || [];
-    if (gang.length > 0 && gang.every((g) => g.hp <= 0)) done = true;
-  } else if (stage.type === 'escape') {
-    if (place && dist(px, py, place.x, place.y) < STEAL_ARRIVE) done = true;
-  } else if (stage.type === 'escapeArea') {
-    if (place && dist(px, py, place.x, place.y) > ESCAPE_DIST) done = true;
-  }
-
-  if (!done) return;
   S.mission.stage += 1;
-  if (S.mission.stage >= def.stages.length) completeMission(S);
-  else beginStage(S);
-}
-
-/** One line for the HUD: what the player should do right now. */
-export function missionObjective(S) {
-  if (!S.mission.active) {
-    if (S.stats.missionsDone >= MISSIONS.length) return 'All jobs done — Verde Bay is yours.';
-    return "Head to Mara's Garage to start the next job.";
+  if (S.mission.stage >= def.stages.length) {
+    S.player.cash += def.reward;
+    S.stats.missionsDone += 1;
+    S.mission.active = false;
+    S.mission.index = S.stats.missionsDone;
+    S.events.push(`Mission complete: ${def.title} — +$${def.reward.toLocaleString('en-US')}`);
+    return true;
   }
-  const def = MISSIONS[S.mission.index];
-  const stage = def.stages[S.mission.stage];
-  if (!stage) return def.title;
-  const name = stage.target ? placeName(stage.target) : '';
-  switch (stage.type) {
-    case 'goto': return `Head to ${name}`;
-    case 'pickup': return `Pick up the package at ${name}`;
-    case 'deliver': return `Deliver the package to ${name}`;
-    case 'driveTo': return `Drive to ${name}`;
-    case 'grab': return `Grab the goods at ${name}`;
-    case 'steal': return "Steal the Comet GT, then take it to Mara's Garage";
-    case 'eliminate': return `Take out the gang at ${name}`;
-    case 'escape': return `Escape to ${name} — lose the cops`;
-    case 'escapeArea': return `Lose the cops — get clear of ${name}`;
-    default: return def.title;
-  }
+  beginStage(S);
+  return false;
 }

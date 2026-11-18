@@ -1,552 +1,414 @@
-// VERDE BAY — the 3D renderer. three.js r160 (vendored, window.THREE):
-// a dusk-lit low-poly city, chase camera with occlusion pull-in, 3D cars
-// and pedestrians, mission marker, particles and tracers. It only reads
-// the sim state; it never changes it.
+// The 3D view: three.js (vendored UMD, global THREE) draws the sim state.
+// Sim coordinates are top-down (x right, y down); the 3D world maps them to
+// (x, height, -y). Dusk lighting, soft shadows, a chase camera that pulls
+// in when a building blocks the view.
 
-import { MISSIONS } from './missions.js';
+import { CONFIG } from './config.js';
+import { createEffects } from './effects.js';
+import { districtAt } from './city.js';
+import { MISSIONS, stagePlace } from './missions.js';
+import { clamp, lerp } from './util.js';
 
-const THREE = globalThis.THREE;
+const WALL_COLORS = ['#d9cfc0', '#c9b8a3', '#b8c4c9', '#e5d8c8', '#a8b8a0'];
+const ROAD_COLOR = 0x2f2f38;
+const WATER_COLOR = 0x1d4e6b;
 
-/** Ray vs axis-aligned box, slab test. Returns the hit t in [0,1] or -1. */
-function rayBox(px, py, pz, dx, dy, dz, bx, by, bz, hw, hh, hd) {
-  let tmin = 0; let tmax = 1;
-  const mins = [bx - hw, by, bz - hd];
-  const maxs = [bx + hw, by + hh, bz + hd];
-  const o = [px, py, pz];
-  const d = [dx, dy, dz];
-  for (let i = 0; i < 3; i++) {
-    if (Math.abs(d[i]) < 1e-9) {
-      if (o[i] < mins[i] || o[i] > maxs[i]) return -1;
-    } else {
-      let t1 = (mins[i] - o[i]) / d[i];
-      let t2 = (maxs[i] - o[i]) / d[i];
-      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
-      if (t1 > tmin) tmin = t1;
-      if (t2 < tmax) tmax = t2;
-      if (tmin > tmax) return -1;
+function matCache() {
+  const cache = new Map();
+  return (color, opts = {}) => {
+    const key = `${color}|${opts.emissive ?? ''}|${opts.transparent ?? ''}`;
+    if (!cache.has(key)) {
+      cache.set(key, new THREE.MeshLambertMaterial({
+        color,
+        emissive: opts.emissive ?? 0x000000,
+        transparent: opts.transparent ?? false,
+        opacity: opts.opacity ?? 1,
+      }));
     }
-  }
-  return tmin;
+    return cache.get(key);
+  };
 }
 
-function makeGroundTexture(city) {
-  const c = document.createElement('canvas');
-  c.width = 1024; c.height = 800;
-  const g = c.getContext('2d');
-  g.scale(1024 / 2600, 800 / 2000);
-  // Base ground.
-  g.fillStyle = '#2e3d33';
-  g.fillRect(0, 0, 2600, 2000);
-  // Beach sand + water at the south edge.
-  g.fillStyle = '#d9c08a';
-  g.fillRect(0, 1500, 2600, 500);
-  g.fillStyle = '#274b73';
-  g.fillRect(0, 1940, 2600, 60);
-  g.fillStyle = '#3a6a9a';
-  for (let x = 0; x < 2600; x += 90) g.fillRect(x, 1952, 50, 6);
-  // Roads.
-  g.fillStyle = '#26262b';
-  for (const x of city.roads.vertical) g.fillRect(x - 32, 0, 64, 2000);
-  for (const y of city.roads.horizontal) g.fillRect(0, y - 32, 2600, 64);
-  // Sidewalk edges around each block.
-  g.strokeStyle = '#4a4a52';
-  g.lineWidth = 6;
-  const vx = city.roads.vertical; const hy = city.roads.horizontal;
-  for (let i = 0; i < vx.length - 1; i++) {
-    for (let j = 0; j < hy.length - 1; j++) {
-      g.strokeRect(vx[i] + 32, hy[j] + 32, vx[i + 1] - vx[i] - 64, hy[j + 1] - hy[j] - 64);
-    }
-  }
-  // Center dashes.
-  g.fillStyle = '#c9a227';
-  for (const x of vx) {
-    for (let y = 0; y < 2000; y += 80) g.fillRect(x - 3, y, 6, 38);
-  }
-  for (const y of hy) {
-    for (let x = 0; x < 2600; x += 80) g.fillRect(x, y - 3, 38, 6);
-  }
-  // Crosswalks at every crossing.
-  g.fillStyle = '#d8d8d8';
-  for (const x of vx) {
-    for (const y of hy) {
-      for (let k = -3; k <= 3; k++) g.fillRect(x - 24 + k * 8, y - 30, 4, 16);
-    }
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
-
-function makeWindowTexture(base, lit) {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = base;
-  g.fillRect(0, 0, 64, 128);
-  for (let y = 8; y < 120; y += 16) {
-    for (let x = 6; x < 58; x += 14) {
-      const on = ((x * 7 + y * 13) % 10) < 4;
-      g.fillStyle = on ? lit : '#232833';
-      g.fillRect(x, y, 9, 11);
-    }
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function radialSprite() {
-  const c = document.createElement('canvas');
-  c.width = 32; c.height = 32;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(16, 16, 1, 16, 16, 16);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.4, 'rgba(255,255,255,0.7)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 32, 32);
-  const tex = new THREE.CanvasTexture(c);
-  return tex;
-}
-
-export function createRenderer(canvas, S) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+/** Create the renderer for a container element. Returns { update, resize }. */
+export function createRenderer(container, city) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(container.clientWidth || 1280, container.clientHeight || 800);
   renderer.setPixelRatio(1);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x241d3a);
-  scene.fog = new THREE.Fog(0x241d3a, 500, 1600);
+  scene.background = new THREE.Color(0x2b2140);
+  scene.fog = new THREE.Fog(0x2b2140, 900, 2600);
 
-  const hemi = new THREE.HemisphereLight(0x8a7fd0, 0x3a2f28, 0.85);
+  const camera = new THREE.PerspectiveCamera(60, 1280 / 800, 1, 6000);
+  camera.position.set(1100, 300, -700);
+
+  // Dusk: a low warm sun and a purple sky fill.
+  const hemi = new THREE.HemisphereLight(0x8a7bd8, 0x2e2a33, 0.9);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffd9a0, 1.35);
+  const sun = new THREE.DirectionalLight(0xffb36b, 1.6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -260; sun.shadow.camera.right = 260;
-  sun.shadow.camera.top = 260; sun.shadow.camera.bottom = -260;
-  sun.shadow.camera.far = 1200;
-  sun.shadow.bias = -0.0006;
+  sun.shadow.camera.left = -500;
+  sun.shadow.camera.right = 500;
+  sun.shadow.camera.top = 500;
+  sun.shadow.camera.bottom = -500;
+  sun.shadow.camera.far = 2200;
   scene.add(sun);
   scene.add(sun.target);
 
-  const camera = new THREE.PerspectiveCamera(58, 1280 / 800, 1, 4000);
-  const camPos = new THREE.Vector3(0, 400, 900);
-  let snapped = false; // first chase frame: jump straight behind the player
+  const materialFor = matCache();
 
-  // --- static city ---------------------------------------------------------
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(2600, 2000),
-    new THREE.MeshStandardMaterial({ map: makeGroundTexture(S.city), roughness: 1 }),
+  // --- ground, sea, bridge -----------------------------------------------
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(7000, 4500),
+    new THREE.MeshLambertMaterial({ color: WATER_COLOR, transparent: true, opacity: 0.92 }),
   );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(1300, 0, 1000);
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(1700, -3, -1000);
+  scene.add(water);
+
+  const groundMat = materialFor('#5d7050');
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(2600, 20, 2000), groundMat);
+  ground.position.set(1300, -10, -1000);
   ground.receiveShadow = true;
   scene.add(ground);
-
-  const texDowntown = makeWindowTexture('#6a6258', '#ffd76a');
-  const texBrick = makeWindowTexture('#8a5a44', '#ffca7a');
-  const texFlat = makeWindowTexture('#5d5348', '#ffe9a8');
-  const wallMats = {
-    downtown: new THREE.MeshStandardMaterial({ map: texDowntown, roughness: 0.9 }),
-    oldtown: new THREE.MeshStandardMaterial({ map: texBrick, roughness: 0.95 }),
-    residential: new THREE.MeshStandardMaterial({ map: texBrick, roughness: 0.95 }),
-    industrial: new THREE.MeshStandardMaterial({ map: texFlat, roughness: 0.95 }),
-    beach: new THREE.MeshStandardMaterial({ map: texBrick, roughness: 0.95 }),
-  };
-  const roofMatCache = new Map();
-  function roofMat(color) {
-    let m = roofMatCache.get(color);
-    if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: 0.95 }); roofMatCache.set(color, m); }
-    return m;
+  const islaGround = new THREE.Mesh(new THREE.BoxGeometry(660, 20, 800), materialFor('#6b7f5c'));
+  islaGround.position.set(3050, -10, -1100);
+  islaGround.receiveShadow = true;
+  scene.add(islaGround);
+  const bridgeDeck = new THREE.Mesh(
+    new THREE.BoxGeometry(140, 10, 220),
+    materialFor('#3a3a44'),
+  );
+  bridgeDeck.position.set(2660, -2, -1040);
+  bridgeDeck.receiveShadow = true;
+  scene.add(bridgeDeck);
+  for (const dz of [-110, 110]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(140, 8, 4), materialFor('#c1121f'));
+    rail.position.set(2660, 8, -1040 + dz);
+    scene.add(rail);
   }
 
-  const unitBox = new THREE.BoxGeometry(1, 1, 1);
-  const stackGeo = new THREE.CylinderGeometry(4, 6, 26, 8);
-  const stackMat = new THREE.MeshStandardMaterial({ color: '#6a5a50', roughness: 1 });
-  for (const b of S.city.buildings) {
-    const mesh = new THREE.Mesh(unitBox, wallMats[b.district] || wallMats.downtown);
-    mesh.scale.set(b.w, b.height, b.d);
-    mesh.position.set(b.x, b.height / 2, b.y);
-    mesh.castShadow = true;
+  // --- roads ---------------------------------------------------------------
+  const roadGroup = new THREE.Group();
+  for (const r of city.roads) {
+    const horizontal = r.y0 === r.y1;
+    const len = horizontal ? r.x1 - r.x0 : r.y1 - r.y0;
+    const w = horizontal ? len : 46;
+    const d = horizontal ? 46 : len;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), materialFor(ROAD_COLOR));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set((r.x0 + r.x1) / 2, 0.4, -(r.y0 + r.y1) / 2);
     mesh.receiveShadow = true;
-    scene.add(mesh);
-    const roof = new THREE.Mesh(unitBox, roofMat(b.roof));
-    roof.scale.set(b.w + 4, 3, b.d + 4);
-    roof.position.set(b.x, b.height + 1.5, b.y);
-    roof.castShadow = true;
-    scene.add(roof);
-    if (b.stack) {
-      const st = new THREE.Mesh(stackGeo, stackMat);
-      st.position.set(b.x + b.w / 4, b.height + 13, b.y - b.d / 4);
-      st.castShadow = true;
-      scene.add(st);
+    roadGroup.add(mesh);
+  }
+  // Centre dashes on the main east-west roads.
+  const dashMat = materialFor('#e8e8e8');
+  for (const r of city.roads.slice(0, 6)) {
+    const len = r.x1 - r.x0;
+    for (let x = r.x0 + 30; x < r.x1 - 10; x += 70) {
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(26, 3), dashMat);
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(x, 0.6, -r.y0);
+      roadGroup.add(dash);
     }
+    void len;
   }
+  scene.add(roadGroup);
 
-  // Palms, trees, lamps as instanced meshes (static, repeated).
-  function instanced(geo, mat, items, place) {
-    const m = new THREE.InstancedMesh(geo, mat, items.length);
-    const d = new THREE.Object3D();
-    items.forEach((it, i) => { place(d, it); d.updateMatrix(); m.setMatrixAt(i, d.matrix); });
-    m.castShadow = true;
-    scene.add(m);
-    return m;
-  }
-  const trunkGeo = new THREE.CylinderGeometry(2.2, 3.4, 26, 6);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: '#7a5a3a', roughness: 1 });
-  const palmTopGeo = new THREE.IcosahedronGeometry(9, 0);
-  const palmTopMat = new THREE.MeshStandardMaterial({ color: '#3f7d3a', roughness: 1 });
-  instanced(trunkGeo, trunkMat, S.city.palms, (d, p) => {
-    d.position.set(p.x, 13 * p.s, p.y);
-    d.scale.setScalar(p.s);
-    d.rotation.z = p.lean;
-  });
-  instanced(palmTopGeo, palmTopMat, S.city.palms, (d, p) => {
-    d.position.set(p.x + p.lean * 20, 30 * p.s, p.y);
-    d.scale.set(p.s * 1.4, p.s * 0.7, p.s * 1.4);
-  });
-  const treeTrunkGeo = new THREE.CylinderGeometry(2, 3, 12, 6);
-  const treeTopGeo = new THREE.IcosahedronGeometry(10, 0);
-  const treeTopMat = new THREE.MeshStandardMaterial({ color: '#4a7d44', roughness: 1 });
-  instanced(treeTrunkGeo, trunkMat, S.city.trees, (d, t) => {
-    d.position.set(t.x, 6 * t.s, t.y);
-    d.scale.setScalar(t.s);
-  });
-  instanced(treeTopGeo, treeTopMat, S.city.trees, (d, t) => {
-    d.position.set(t.x, 18 * t.s, t.y);
-    d.scale.setScalar(t.s);
-  });
-  const lampPoleGeo = new THREE.CylinderGeometry(1.2, 1.2, 22, 6);
-  const lampPoleMat = new THREE.MeshStandardMaterial({ color: '#2c2f38', roughness: 0.9 });
-  const lampBulbGeo = new THREE.SphereGeometry(2, 8, 6);
-  const lampBulbMat = new THREE.MeshStandardMaterial({ color: '#ffd76a', emissive: '#ffca5e', emissiveIntensity: 1.6 });
-  instanced(lampPoleGeo, lampPoleMat, S.city.lamps, (d, l) => { d.position.set(l.x, 11, l.y); });
-  instanced(lampBulbGeo, lampBulbMat, S.city.lamps, (d, l) => { d.position.set(l.x, 23, l.y); });
-
-  // --- dynamic objects -------------------------------------------------------
-  const carMeshes = new Map();
-  const pedMeshes = new Map();
-  const bodyMatCache = new Map();
-  function bodyMat(color) {
-    let m = bodyMatCache.get(color);
-    if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.45 }); bodyMatCache.set(color, m); }
-    return m;
-  }
-  const glassMat = new THREE.MeshStandardMaterial({ color: '#141a22', roughness: 0.15, metalness: 0.6 });
-  const wheelGeo = new THREE.CylinderGeometry(5.5, 5.5, 4, 10);
-  const wheelMat = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.9 });
-  const hubGeo = new THREE.BoxGeometry(1.5, 11, 4.4);
-  const hubMat = new THREE.MeshStandardMaterial({ color: '#888888', roughness: 0.4, metalness: 0.7 });
-
-  function buildCarMesh(car) {
+  // --- buildings -----------------------------------------------------------
+  const buildingMeshes = [];
+  const wallMats = WALL_COLORS.map((c) => materialFor(c));
+  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  for (const b of city.buildings) {
     const g = new THREE.Group();
-    const L = car.length; const W = car.width;
-    const body = new THREE.Mesh(unitBox, bodyMat(car.color));
-    body.scale.set(L, 10, W);
+    const walls = new THREE.Mesh(boxGeo, wallMats[Math.abs(Math.floor(b.x + b.y)) % wallMats.length]);
+    walls.scale.set(b.w, b.height, b.d);
+    walls.position.y = b.height / 2;
+    walls.castShadow = true;
+    walls.receiveShadow = true;
+    g.add(walls);
+    const roof = new THREE.Mesh(boxGeo, materialFor(b.roof));
+    roof.scale.set(b.w + 3, 2, b.d + 3);
+    roof.position.y = b.height + 1;
+    g.add(roof);
+    // Downtown towers get a lit rooftop beacon so the skyline reads at dusk.
+    if (b.district === 'downtown' && b.floors >= 10) {
+      const beacon = new THREE.Mesh(
+        new THREE.BoxGeometry(4, 6, 4),
+        materialFor('#ffd166', { emissive: 0xff9f1c }),
+      );
+      beacon.position.y = b.height + 5;
+      g.add(beacon);
+    }
+    if (b.stack) {
+      const stack = new THREE.Mesh(new THREE.CylinderGeometry(4, 5, b.height * 0.9, 8), materialFor('#5f6a6a'));
+      stack.position.set(b.w / 2 + 8, b.height * 0.45, 0);
+      stack.castShadow = true;
+      g.add(stack);
+    }
+    g.position.set(b.x, 0, -b.y);
+    scene.add(g);
+    buildingMeshes.push(walls);
+  }
+
+  // --- palms ---------------------------------------------------------------
+  const trunkGeo = new THREE.CylinderGeometry(2.5, 4, 26, 6);
+  const frondGeo = new THREE.ConeGeometry(16, 14, 6);
+  const trunkMat = materialFor('#7a5a3a');
+  const frondMat = materialFor('#2a9d5c');
+  for (const p of city.palms) {
+    const g = new THREE.Group();
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.y = 13;
+    trunk.castShadow = true;
+    g.add(trunk);
+    const frond = new THREE.Mesh(frondGeo, frondMat);
+    frond.position.y = 32;
+    frond.castShadow = true;
+    g.add(frond);
+    g.position.set(p.x, 0, -p.y);
+    scene.add(g);
+  }
+
+  // --- ferry + docks -------------------------------------------------------
+  const ferryGroup = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(120, 16, 34), materialFor('#f7ede2'));
+  hull.position.y = 4;
+  hull.castShadow = true;
+  ferryGroup.add(hull);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(70, 14, 26), materialFor('#457b9d'));
+  cabin.position.y = 18;
+  ferryGroup.add(cabin);
+  const funnel = new THREE.Mesh(new THREE.CylinderGeometry(4, 5, 18, 8), materialFor('#e63946'));
+  funnel.position.set(-20, 26, 0);
+  ferryGroup.add(funnel);
+  ferryGroup.position.set(city.ferry.x, 0, -city.ferry.y);
+  ferryGroup.rotation.y = city.ferry.angle;
+  scene.add(ferryGroup);
+  const dockMat = materialFor('#8a6b48');
+  for (let i = 0; i < 5; i++) {
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 60), dockMat);
+    plank.position.set(2190 + i * 14, 1, -1900);
+    scene.add(plank);
+  }
+
+  // --- mission beam --------------------------------------------------------
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(14, 14, 420, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  beam.visible = false;
+  scene.add(beam);
+  const marker = new THREE.Mesh(
+    new THREE.OctahedronGeometry(12),
+    new THREE.MeshBasicMaterial({ color: 0xffd166 }),
+  );
+  marker.visible = false;
+  scene.add(marker);
+
+  // --- dynamic actors ------------------------------------------------------
+  const carGeoBody = new THREE.BoxGeometry(34, 10, 18);
+  const carGeoCabin = new THREE.BoxGeometry(18, 8, 16);
+  const wheelGeo = new THREE.BoxGeometry(8, 8, 4);
+  const wheelMat = materialFor('#111111');
+  const glassMat = materialFor('#1b263b');
+  const carMeshes = new Map();
+
+  function carMesh(car) {
+    let m = carMeshes.get(car.id);
+    if (m) return m;
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(carGeoBody, materialFor(car.color));
     body.position.y = 7;
     body.castShadow = true;
     g.add(body);
-    const cabin = new THREE.Mesh(unitBox, glassMat);
-    cabin.scale.set(L * 0.45, 8, W * 0.78);
-    cabin.position.set(-L * 0.05, 15, 0);
+    const cabin = new THREE.Mesh(carGeoCabin, glassMat);
+    cabin.position.set(-2, 15, 0);
     cabin.castShadow = true;
     g.add(cabin);
-    const wheels = [];
-    for (const [wx, wz] of [[L * 0.32, W / 2], [L * 0.32, -W / 2], [-L * 0.32, W / 2], [-L * 0.32, -W / 2]]) {
-      const wg = new THREE.Group();
-      wg.position.set(wx, 5.5, wz);
-      const tire = new THREE.Mesh(wheelGeo, wheelMat);
-      tire.rotation.x = Math.PI / 2;
-      wg.add(tire);
-      const hub = new THREE.Mesh(hubGeo, hubMat);
-      wg.add(hub);
-      g.add(wg);
-      wheels.push(wg);
+    for (const [wx, wz] of [[-11, -9], [11, -9], [-11, 9], [11, 9]]) {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.position.set(wx, 4, wz);
+      g.add(wheel);
     }
-    const brakeMat = new THREE.MeshStandardMaterial({ color: '#7a1010', emissive: '#ff2020', emissiveIntensity: 0.25 });
-    for (const wz of [W / 2 - 4, -W / 2 + 4]) {
-      const bl = new THREE.Mesh(unitBox, brakeMat);
-      bl.scale.set(2, 3, 5);
-      bl.position.set(-L / 2 - 0.5, 8, wz);
-      g.add(bl);
-    }
-    let barA = null; let barB = null;
-    if (car.type === 'police') {
-      barA = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: '#300', emissive: '#ff2020', emissiveIntensity: 2 }));
-      barA.scale.set(8, 3, 6); barA.position.set(0, 20.5, -W / 4);
-      barB = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: '#003', emissive: '#2040ff', emissiveIntensity: 2 }));
-      barB.scale.set(8, 3, 6); barB.position.set(0, 20.5, W / 4);
-      g.add(barA); g.add(barB);
-    }
-    if (car.type === 'taxi') {
-      const sign = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: '#3a2f00', emissive: '#ffd21a', emissiveIntensity: 1.4 }));
-      sign.scale.set(12, 4, 8); sign.position.set(0, 20.5, 0);
-      g.add(sign);
+    if (car.owner === 'cop') {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 12), materialFor('#e63946', { emissive: 0xaa0000 }));
+      bar.position.set(-2, 21, 0);
+      bar.name = 'lightbar';
+      g.add(bar);
     }
     scene.add(g);
-    const rec = { group: g, wheels, brakeMat, barA, barB };
-    carMeshes.set(car, rec);
-    return rec;
-  }
-
-  function buildPedMesh(ped) {
-    const g = new THREE.Group();
-    const body = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: ped.color, roughness: 0.9 }));
-    body.scale.set(11, 17, 7);
-    body.position.y = 11;
-    body.castShadow = true;
-    g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(4.6, 10, 8), new THREE.MeshStandardMaterial({ color: '#d9a077', roughness: 0.8 }));
-    head.position.y = 23;
-    head.castShadow = true;
-    g.add(head);
-    if (ped.kind === 'cop') {
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 2.4, 10), new THREE.MeshStandardMaterial({ color: '#14264a', roughness: 0.8 }));
-      cap.position.y = 27;
-      g.add(cap);
-    }
-    if (ped.kind === 'gang') {
-      const gun = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.6 }));
-      gun.scale.set(10, 2, 2);
-      gun.position.set(8, 14, 0);
-      g.add(gun);
-    }
-    scene.add(g);
-    pedMeshes.set(ped, g);
+    carMeshes.set(car.id, g);
     return g;
   }
 
-  // Mission marker: beam + spinning ring + bobbing orb.
-  const marker = new THREE.Group();
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(16, 16, 130, 12, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffd21a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }),
-  );
-  beam.position.y = 65;
-  marker.add(beam);
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(26, 2.2, 8, 32),
-    new THREE.MeshBasicMaterial({ color: 0xffd21a }),
-  );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 2;
-  marker.add(ring);
-  const orb = new THREE.Mesh(
-    new THREE.SphereGeometry(6, 12, 10),
-    new THREE.MeshBasicMaterial({ color: 0xffe066 }),
-  );
-  orb.position.y = 34;
-  marker.add(orb);
-  scene.add(marker);
+  const personGeoBody = new THREE.CylinderGeometry(7, 9, 22, 8);
+  const personGeoHead = new THREE.SphereGeometry(6, 8, 8);
+  const playerGroup = new THREE.Group();
+  const playerBody = new THREE.Mesh(personGeoBody, materialFor('#e63946'));
+  playerBody.position.y = 11;
+  playerBody.castShadow = true;
+  playerGroup.add(playerBody);
+  const playerHead = new THREE.Mesh(personGeoHead, materialFor('#f2c9a0'));
+  playerHead.position.y = 27;
+  playerHead.castShadow = true;
+  playerGroup.add(playerHead);
+  scene.add(playerGroup);
 
-  // Particles (Points) + tracers (LineSegments), preallocated.
-  const MAXP = 400;
-  const pGeo = new THREE.BufferGeometry();
-  const pPos = new Float32Array(MAXP * 3);
-  const pCol = new Float32Array(MAXP * 3);
-  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-  pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
-  const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
-    size: 7, map: radialSprite(), vertexColors: true, transparent: true,
-    depthWrite: false, sizeAttenuation: true,
-  }));
-  points.frustumCulled = false;
-  scene.add(points);
-  const MAXT = 24;
-  const tGeo = new THREE.BufferGeometry();
-  const tPos = new Float32Array(MAXT * 6);
-  const tCol = new Float32Array(MAXT * 6);
-  tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
-  tGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
-  const lines = new THREE.LineSegments(tGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
-  lines.frustumCulled = false;
-  scene.add(lines);
+  const pedMeshes = new Map();
+  function pedMesh(i, color) {
+    let m = pedMeshes.get(i);
+    if (m) return m;
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(personGeoBody, materialFor(color));
+    body.position.y = 11;
+    body.castShadow = true;
+    g.add(body);
+    const head = new THREE.Mesh(personGeoHead, materialFor('#e8b98a'));
+    head.position.y = 27;
+    g.add(head);
+    scene.add(g);
+    pedMeshes.set(i, g);
+    return g;
+  }
 
-  const flash = new THREE.PointLight(0xffd76a, 0, 260);
-  scene.add(flash);
-  let flashI = 0;
+  const gangMeshes = new Map();
+  const effects = createEffects(scene);
 
-  const tmpColor = new THREE.Color();
-  const camTarget = new THREE.Vector3();
+  const raycaster = new THREE.Raycaster();
+  const camTarget = new THREE.Vector3(1100, 0, -1000);
+  const camPos = new THREE.Vector3(1100, 300, -700);
   const desired = new THREE.Vector3();
-  const forward = new THREE.Vector3();
+  const lookAt = new THREE.Vector3();
+  const rayDir = new THREE.Vector3();
 
   function syncCars(S) {
     const seen = new Set();
     for (const car of S.cars) {
-      seen.add(car);
-      let rec = carMeshes.get(car);
-      if (!rec) rec = buildCarMesh(car);
-      rec.group.position.set(car.x, 0, car.y);
-      rec.group.rotation.y = -car.angle;
-      for (const w of rec.wheels) w.rotation.z = car.wheelSpin || 0;
-      rec.brakeMat.emissiveIntensity = car.brakeLight ? 2.4 : 0.25;
-      if (rec.barA && rec.barB) {
-        const on = Math.sin(S.time * 11) > 0;
-        rec.barA.material.emissiveIntensity = on ? 2.4 : 0.15;
-        rec.barB.material.emissiveIntensity = on ? 0.15 : 2.4;
+      seen.add(car.id);
+      const m = carMesh(car);
+      m.position.set(car.x, 0, -car.y);
+      m.rotation.y = -car.angle;
+      const bar = m.getObjectByName('lightbar');
+      if (bar) bar.visible = Math.floor(S.time * 4) % 2 === 0;
+    }
+    for (const [id, m] of [...carMeshes]) {
+      if (!seen.has(id)) {
+        scene.remove(m);
+        carMeshes.delete(id);
       }
     }
-    for (const [car, rec] of [...carMeshes]) {
-      if (!seen.has(car)) { scene.remove(rec.group); carMeshes.delete(car); }
-    }
   }
 
-  function syncPeds(S) {
-    const seen = new Set();
-    const list = [...S.peds];
-    const gang = (S.mission.data && S.mission.data.gang) || [];
-    for (const g of gang) if (g.hp > 0) list.push(g);
-    if (!S.player.onFoot) {
-      // The player on foot gets a mesh too; in a car the car mesh shows.
-    } else {
-      list.push({ x: S.player.x, y: S.player.y, angle: S.player.angle, color: '#c97b2e', kind: 'player', hp: 1 });
-    }
-    for (const ped of list) {
-      seen.add(ped);
-      let g = pedMeshes.get(ped);
-      if (!g) g = buildPedMesh(ped);
-      g.position.set(ped.x, 0, ped.y);
-      g.rotation.y = -ped.angle;
-    }
-    for (const [ped, g] of [...pedMeshes]) {
-      if (!seen.has(ped)) { scene.remove(g); pedMeshes.delete(ped); }
-    }
-  }
+  return {
+    /** The canvas element (for input listeners). */
+    domElement: renderer.domElement,
+    /** Advance the view one frame from the sim state. */
+    update(S, dt) {
+      const p = S.player;
+      syncCars(S);
 
-  function objectivePos(S) {
-    if (S.mission.active) {
-      const def = MISSIONS[S.mission.index];
-      const stage = def && def.stages[S.mission.stage];
-      if (stage) {
-        if (stage.type === 'steal' && S.mission.data.targetCar) {
-          const c = S.mission.data.targetCar;
-          return { x: c.x, y: c.y };
+      // Pedestrians.
+      S.peds.forEach((ped, i) => {
+        const m = pedMesh(i, ped.color);
+        m.position.set(ped.x, 0, -ped.y);
+        m.rotation.y = -ped.angle;
+      });
+
+      // Gang members (red).
+      const gang = S.mission.active && S.mission.data.gang ? S.mission.data.gang : [];
+      gang.forEach((g, i) => {
+        let m = gangMeshes.get(i);
+        if (!m) {
+          m = new THREE.Group();
+          const body = new THREE.Mesh(personGeoBody, materialFor('#8d0801'));
+          body.position.y = 11;
+          body.castShadow = true;
+          m.add(body);
+          const head = new THREE.Mesh(personGeoHead, materialFor('#e8b98a'));
+          head.position.y = 27;
+          m.add(head);
+          scene.add(m);
+          gangMeshes.set(i, m);
         }
-        if (stage.target) return S.city.places[stage.target];
+        m.visible = g.hp > 0;
+        m.position.set(g.x, 0, -g.y);
+        m.rotation.y = -g.angle;
+      });
+      for (const [i, m] of [...gangMeshes]) {
+        if (i >= gang.length) {
+          scene.remove(m);
+          gangMeshes.delete(i);
+        }
       }
-    }
-    if (S.taxi.state === 'waiting' && S.taxi.customer) return S.taxi.customer;
-    if (S.taxi.state === 'riding' && S.taxi.dest) return S.taxi.dest;
-    return null;
-  }
 
-  function render(S, dt, view) {
-    syncCars(S);
-    syncPeds(S);
+      // Player on foot (hidden while driving).
+      playerGroup.visible = p.onFoot;
+      if (p.onFoot) {
+        playerGroup.position.set(p.x, 0, -p.y);
+        playerGroup.rotation.y = -p.aimAngle;
+      }
 
-    // Particles + tracers from the sim's effects.
-    const parts = S.effects.particles;
-    for (let i = 0; i < MAXP; i++) {
-      const p = parts[i];
-      if (p) {
-        pPos[i * 3] = p.x; pPos[i * 3 + 1] = p.z; pPos[i * 3 + 2] = p.y;
-        tmpColor.set(p.color);
-        pCol[i * 3] = tmpColor.r; pCol[i * 3 + 1] = tmpColor.g; pCol[i * 3 + 2] = tmpColor.b;
+      // Mission beam + marker over the current objective.
+      if (S.mission.active) {
+        const def = MISSIONS[S.mission.index];
+        const stage = def.stages[S.mission.stage];
+        const place = stagePlace(S, stage);
+        if (place) {
+          beam.visible = true;
+          marker.visible = true;
+          beam.position.set(place.x, 210, -place.y);
+          marker.position.set(place.x, 60 + Math.sin(S.time * 3) * 8, -place.y);
+          marker.rotation.y = S.time * 2;
+        } else {
+          beam.visible = false;
+          marker.visible = false;
+        }
       } else {
-        pPos[i * 3 + 1] = -100;
+        beam.visible = false;
+        marker.visible = false;
       }
-    }
-    pGeo.attributes.position.needsUpdate = true;
-    pGeo.attributes.color.needsUpdate = true;
-    pGeo.setDrawRange(0, Math.min(parts.length, MAXP));
-    const trs = S.effects.tracers;
-    for (let i = 0; i < MAXT; i++) {
-      const t = trs[i];
-      if (t) {
-        tPos[i * 6] = t.x1; tPos[i * 6 + 1] = t.z1; tPos[i * 6 + 2] = t.y1;
-        tPos[i * 6 + 3] = t.x2; tPos[i * 6 + 4] = t.z2; tPos[i * 6 + 5] = t.y2;
-        tmpColor.set(t.color);
-        const a = Math.max(0.15, t.life / 0.12);
-        tCol[i * 6] = tmpColor.r * a; tCol[i * 6 + 1] = tmpColor.g * a; tCol[i * 6 + 2] = tmpColor.b * a;
-        tCol[i * 6 + 3] = tmpColor.r * a; tCol[i * 6 + 4] = tmpColor.g * a; tCol[i * 6 + 5] = tmpColor.b * a;
-      } else {
-        tPos[i * 6 + 1] = -100; tPos[i * 6 + 4] = -100;
-      }
-    }
-    tGeo.attributes.position.needsUpdate = true;
-    tGeo.attributes.color.needsUpdate = true;
-    tGeo.setDrawRange(0, Math.min(trs.length, MAXT) * 2);
-    if (trs.length > 0) {
-      const t = trs[trs.length - 1];
-      flash.position.set(t.x2, t.z2 + 6, t.y2);
-      flashI = 26;
-    }
-    flashI = Math.max(0, flashI - dt * 160);
-    flash.intensity = flashI;
 
-    // Mission marker.
-    const obj = objectivePos(S);
-    marker.visible = !!obj;
-    if (obj) {
-      marker.position.set(obj.x, 0, obj.y);
-      ring.rotation.z = S.time * 1.6;
-      orb.position.y = 34 + Math.sin(S.time * 2.4) * 5;
-    }
+      // Sun follows the player so shadows stay local.
+      sun.position.set(p.x + 400, 500, -p.y + 300);
+      sun.target.position.set(p.x, 0, -p.y);
+      sun.target.updateMatrixWorld();
 
-    // Camera.
-    const p = S.player;
-    if (view.mode === 'orbit') {
-      const a = S.time * 0.03 + view.angle0;
-      camera.position.set(1300 + Math.cos(a) * 950, 520, 1000 + Math.sin(a) * 950);
-      camera.lookAt(1300, 0, 1000);
-    } else {
-      const inCar = !!p.car;
-      const distC = inCar ? 95 : 85;
-      const heightC = inCar ? 42 : 46;
-      const fx = Math.cos(p.angle); const fy = Math.sin(p.angle);
-      desired.set(p.x - fx * distC, heightC, p.y - fy * distC);
-      // Occlusion pull-in: ray from the player's head to the camera.
-      const ox = p.x; const oy = 14; const oz = p.y;
-      const dx = desired.x - ox; const dy = desired.y - oy; const dz = desired.z - oz;
-      let best = 1;
-      for (const b of S.city.buildings) {
-        const t = rayBox(ox, oy, oz, dx, dy, dz, b.x, 0, b.y, b.w / 2, b.height, b.d / 2);
-        if (t >= 0 && t < best) best = t;
-      }
-      if (best < 1) {
-        const pull = Math.max(0.25, best * 0.92);
-        desired.set(ox + dx * pull, oy + dy * pull, oz + dz * pull);
-      }
-      if (!snapped) { camPos.copy(desired); snapped = true; }
-      else camPos.lerp(desired, 0.14);
-      const ahead = inCar ? 26 : 70;
-      camTarget.set(p.x + fx * ahead, inCar ? 13 : 10, p.y + fy * ahead);
+      // Chase camera: behind the player/car, pulled in past buildings.
+      const cam = CONFIG.camera;
+      const fx = Math.cos(p.angle);
+      const fy = Math.sin(p.angle);
+      const dist = p.car ? cam.distance + 60 : cam.distance;
+      desired.set(
+        p.x - fx * dist,
+        cam.height,
+        -(p.y - fy * dist),
+      );
+      camTarget.set(p.x + fx * cam.lookAhead, 10, -(p.y + fy * cam.lookAhead));
+      rayDir.copy(desired).sub(camTarget).normalize();
+      raycaster.set(camTarget, rayDir);
+      raycaster.far = dist + 40;
+      const hits = raycaster.intersectObjects(buildingMeshes, false);
+      let pull = 1;
+      if (hits.length > 0) pull = clamp((hits[0].distance - 30) / dist, 0.25, 1);
+      desired.lerp(camTarget, 1 - pull);
+      const k = Math.min(1, cam.smooth * dt);
+      camPos.lerp(desired, k);
       camera.position.copy(camPos);
-      camera.lookAt(camTarget);
-    }
+      lookAt.lerp(camTarget, Math.min(1, 8 * dt));
+      camera.lookAt(lookAt);
 
-    // Sun follows the player so shadows stay local.
-    sun.position.set(p.x + 320, 420, p.y - 240);
-    sun.target.position.set(p.x, 0, p.y);
-
-    renderer.render(scene, camera);
-  }
-
-  /** World aim angle for a mouse position (screen pixels). */
-  function screenAimAngle(mx, my) {
-    camera.getWorldDirection(forward);
-    const camAngle = Math.atan2(forward.z, forward.x);
-    const cx = window.innerWidth / 2;
-    const cy = window.innerHeight / 2;
-    const dx = mx - cx;
-    const dy = my - cy;
-    return camAngle + Math.atan2(dx, -dy);
-  }
-
-  function resize() {
-    const w = canvas.clientWidth || 1280;
-    const h = canvas.clientHeight || 800;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-  }
-  resize();
-
-  return { render, screenAimAngle, resize, camera, scene, renderer };
+      effects.update(S);
+      renderer.render(scene, camera);
+    },
+    resize(w, h) {
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    },
+  };
 }
