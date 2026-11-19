@@ -1,63 +1,102 @@
-// Particles for Verde Bay: muzzle flashes, nitro flames, pickup sparkles,
-// explosions. Pure data — the sim spawns them, the renderer draws them as
-// soft radial sprites (a canvas texture, so a PointsMaterial never shows
-// hard white squares).
+// VERDE BAY 3D v7 — particles: muzzle flashes, explosions, smoke, sparks, skid dust.
+// A small pooled mesh system on top of THREE; the renderer owns the scene.
 
-/** The live particle list, shared by the sim and the renderer. */
-export const particles = [];
+export function createEffects(scene) {
+  const T = globalThis.THREE;
+  const geo = new T.BoxGeometry(1, 1, 1);
+  const materials = new Map();
+  const pool = [];
+  const MAX = 240;
 
-/** Spawn a burst of `count` glowing particles at (x, y, z). */
-export function burst(x, y, z, { color = '#ffd60a', count = 12, speed = 120, life = 0.7, size = 6 } = {}) {
-  for (let i = 0; i < count; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const v = speed * (0.3 + Math.random() * 0.7);
-    particles.push({
-      x, y, z,
-      vx: Math.cos(a) * v,
-      vy: Math.sin(a) * v,
-      vz: (Math.random() - 0.2) * speed * 0.6,
-      life: life * (0.6 + Math.random() * 0.6),
-      age: 0,
-      size: size * (0.6 + Math.random() * 0.8),
-      color,
-    });
-  }
-  if (particles.length > 600) particles.splice(0, particles.length - 600);
-}
-
-/** Step every particle; dead ones are removed. */
-export function updateParticles(dt) {
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.age += dt;
-    if (p.age >= p.life) {
-      particles.splice(i, 1);
-      continue;
+  function material(color) {
+    if (!materials.has(color)) {
+      materials.set(color, new T.MeshBasicMaterial({ color, transparent: true, opacity: 1 }));
     }
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.z += p.vz * dt;
-    p.vz -= 160 * dt;
-    if (p.z < 0) {
-      p.z = 0;
-      p.vz *= -0.4;
-    }
-    p.vx *= 1 - 1.6 * dt;
-    p.vy *= 1 - 1.6 * dt;
+    return materials.get(color);
   }
-}
 
-/** A soft radial glow texture for THREE.Points (canvas, no asset file). */
-export function makeGlowTexture() {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 64;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.35, 'rgba(255,255,255,0.7)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  return c;
+  function spawn(x, y, z, vx, vy, vz, life, size, color, gravity) {
+    let p = pool.find((q) => !q.alive);
+    if (!p) {
+      if (pool.length >= MAX) return;
+      p = { mesh: new T.Mesh(geo, material('#ffffff')), alive: false, vel: new T.Vector3(), life: 0, maxLife: 1, gravity: 0, size: 1 };
+      p.mesh.visible = false;
+      scene.add(p.mesh);
+      pool.push(p);
+    }
+    p.alive = true;
+    p.mesh.visible = true;
+    p.mesh.material = material(color);
+    p.mesh.position.set(x, y, z);
+    p.mesh.scale.setScalar(size);
+    p.vel.set(vx, vy, vz);
+    p.life = life;
+    p.maxLife = life;
+    p.gravity = gravity;
+    p.size = size;
+  }
+
+  function burst(x, y, z, opts) {
+    const o = opts || {};
+    const n = o.count || 12;
+    const speed = o.speed || 14;
+    const color = o.color || '#ffcc66';
+    const life = o.life || 0.7;
+    const size = o.size || 0.9;
+    const up = o.up || 6;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * speed;
+      spawn(
+        x, y, z,
+        Math.cos(a) * r, up * Math.random(), Math.sin(a) * r,
+        life * (0.6 + Math.random() * 0.7), size * (0.6 + Math.random() * 0.8),
+        color, o.gravity === undefined ? -22 : o.gravity,
+      );
+    }
+  }
+
+  const E = {
+    burst,
+    muzzle(x, y, z, angle) {
+      burst(x + Math.cos(angle) * 2, y + 1.2, z + Math.sin(angle) * 2, {
+        count: 5, speed: 6, color: '#ffe066', life: 0.14, size: 0.7, up: 1, gravity: 0,
+      });
+    },
+    explosion(x, y, z) {
+      burst(x, y + 1, z, { count: 26, speed: 20, color: '#ff7b00', life: 0.9, size: 1.6, up: 12 });
+      burst(x, y + 1, z, { count: 16, speed: 10, color: '#ffd166', life: 0.6, size: 1.1, up: 9 });
+      burst(x, y + 2, z, { count: 12, speed: 5, color: '#555555', life: 1.6, size: 2.2, up: 8, gravity: 6 });
+    },
+    smoke(x, y, z) {
+      burst(x, y, z, { count: 4, speed: 2, color: '#9a9a9a', life: 1.1, size: 1.4, up: 3, gravity: 5 });
+    },
+    sparks(x, y, z) {
+      burst(x, y, z, { count: 10, speed: 16, color: '#fff3b0', life: 0.4, size: 0.5, up: 5 });
+    },
+    skid(x, y, z) {
+      burst(x, y, z, { count: 3, speed: 3, color: '#c9c9c9', life: 0.5, size: 1.0, up: 1, gravity: 2 });
+    },
+    update(dt) {
+      for (const p of pool) {
+        if (!p.alive) continue;
+        p.life -= dt;
+        if (p.life <= 0) {
+          p.alive = false;
+          p.mesh.visible = false;
+          continue;
+        }
+        p.vel.y += p.gravity * dt;
+        p.mesh.position.x += p.vel.x * dt;
+        p.mesh.position.y += p.vel.y * dt;
+        p.mesh.position.z += p.vel.z * dt;
+        if (p.mesh.position.y < 0.2) p.mesh.position.y = 0.2;
+        const k = p.life / p.maxLife;
+        p.mesh.scale.setScalar(Math.max(0.05, p.size * k));
+        p.mesh.rotation.x += dt * 3;
+        p.mesh.rotation.y += dt * 2;
+      }
+    },
+  };
+  return E;
 }

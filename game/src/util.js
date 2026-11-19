@@ -1,10 +1,43 @@
-// Small helpers shared by the Verde Bay simulation and renderer.
-// No DOM, no imports: pure functions so the headless smoke test can use them too.
+// VERDE BAY 3D v7 — small math + deterministic random helpers.
+// Pure functions only: no DOM, no THREE, safe to import from Node and the browser.
 
-/** Deterministic PRNG (mulberry32) so a seed always builds the same city. */
+export function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+export function dist2(ax, ay, bx, by) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy;
+}
+
+export function dist(ax, ay, bx, by) {
+  return Math.sqrt(dist2(ax, ay, bx, by));
+}
+
+export function angleTo(ax, ay, bx, by) {
+  return Math.atan2(by - ay, bx - ax);
+}
+
+export function angleDiff(a, b) {
+  let d = (a - b) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+export function angleLerp(a, b, t) {
+  return a + angleDiff(b, a) * t;
+}
+
+// Deterministic RNG (mulberry32). Same seed -> same city, every run.
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function next() {
+  return function random() {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -13,79 +46,25 @@ export function mulberry32(seed) {
   };
 }
 
-/** Integer in [min, max] from a rng function. */
-export function randInt(rng, min, max) {
-  return min + Math.floor(rng() * (max - min + 1));
-}
-
-/** Float in [min, max) from a rng function. */
-export function randRange(rng, min, max) {
-  return min + rng() * (max - min);
-}
-
-/** Pick one element of an array with a rng function. */
 export function pick(rng, arr) {
   return arr[Math.floor(rng() * arr.length)];
 }
 
-export function clamp(v, min, max) {
-  return v < min ? min : v > max ? max : v;
+export function range(rng, lo, hi) {
+  return lo + rng() * (hi - lo);
 }
 
-export function lerp(a, b, t) {
-  return a + (b - a) * t;
+export function rangeInt(rng, lo, hi) {
+  return lo + Math.floor(rng() * (hi - lo + 1));
 }
 
-/** Shortest signed angle difference from `from` to `to`, in radians. */
-export function angleDiff(from, to) {
-  let d = (to - from) % (Math.PI * 2);
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d < -Math.PI) d += Math.PI * 2;
-  return d;
+// Format helpers for the HUD.
+export function fmtCash(n) {
+  return '$' + Math.round(n).toLocaleString('en-US');
 }
 
-/** Turn `angle` toward `target` by at most `step` radians. */
-export function turnToward(angle, target, step) {
-  const d = angleDiff(angle, target);
-  if (Math.abs(d) <= step) return target;
-  return angle + Math.sign(d) * step;
-}
-
-/** Euclidean distance between two points. */
-export function dist(ax, ay, bx, by) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-/** True when point (x, y) is inside the axis-aligned rect. */
-export function inRect(x, y, r) {
-  return x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
-}
-
-/** Push a circle (x, y, radius) out of an axis-aligned rect; returns true on hit. */
-export function circleRectResolve(p, r, rect) {
-  const cx = clamp(p.x, rect.x, rect.x + rect.w);
-  const cy = clamp(p.y, rect.y, rect.y + rect.d);
-  const dx = p.x - cx;
-  const dy = p.y - cy;
-  const d2 = dx * dx + dy * dy;
-  if (d2 >= r * r) return false;
-  if (d2 > 0.0001) {
-    const d = Math.sqrt(d2);
-    p.x = cx + (dx / d) * r;
-    p.y = cy + (dy / d) * r;
-  } else {
-    // Center inside the rect: push out along the smallest penetration axis.
-    const left = p.x - rect.x;
-    const right = rect.x + rect.w - p.x;
-    const top = p.y - rect.y;
-    const bottom = rect.y + rect.d - p.y;
-    const m = Math.min(left, right, top, bottom);
-    if (m === left) p.x = rect.x - r;
-    else if (m === right) p.x = rect.x + rect.w + r;
-    else if (m === top) p.y = rect.y - r;
-    else p.y = rect.y + rect.d + r;
-  }
-  return true;
+export function fmtTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }

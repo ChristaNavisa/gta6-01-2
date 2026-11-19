@@ -1,14 +1,14 @@
-// VERDE BAY 3D — local static server for play-testing.
-// Serves game/ at http://localhost:8080 (node serve.ts).
-// Node 22, standard library only; no build step.
+// VERDE BAY 3D v7 — local dev server: serves game/ on http://localhost:8080.
+// Node standard library only. Usage: node serve.ts
 
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { join, extname, dirname } from 'node:path';
+import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), 'game');
-const port = parseInt(process.argv[2] ?? '8080', 10);
+const here = fileURLToPath(new URL('.', import.meta.url));
+const root = join(here, 'game');
+const port = Number(process.env.PORT || 8080);
 
 const MIME = {
   '.html': 'text/html',
@@ -16,23 +16,23 @@ const MIME = {
   '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
-  '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
 };
 
 const server = createServer((req, res) => {
-  const url = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  const url = decodeURIComponent((req.url || '/').split('?')[0]);
   const file = join(root, url === '/' ? 'index.html' : url);
   if (!file.startsWith(root) || !existsSync(file) || statSync(file).isDirectory()) {
-    res.writeHead(404);
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('not found');
     return;
   }
-  res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream' });
+  res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' });
   createReadStream(file).pipe(res);
 });
 
 server.listen(port, () => {
-  console.log(`VERDE BAY 3D at http://localhost:${port}/`);
+  console.log(`VERDE BAY 3D v7 at http://localhost:${port}`);
 });

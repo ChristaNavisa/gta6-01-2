@@ -1,62 +1,46 @@
-// Save / load for Verde Bay: one localStorage key, plain JSON.
-// The smoke test drives writeSave -> loadSave -> applySave in the same process.
+// VERDE BAY 3D v7 — save / load through localStorage.
+// Safe to import from Node: localStorage is only touched inside the functions.
 
-import { SAVE_KEY } from './config.js';
+const KEY = 'verde-bay-v7-save';
 
-function storage() {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Read the saved game, or null when there is none / it is corrupt. */
-export function loadSave() {
-  const store = storage();
-  if (!store) return null;
-  let raw = null;
-  try {
-    raw = store.getItem(SAVE_KEY);
-  } catch {
-    return null;
-  }
-  if (!raw) return null;
-  try {
-    const data = JSON.parse(raw);
-    if (typeof data !== 'object' || data === null) return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-/** Write the current progress to localStorage. */
 export function writeSave(S) {
-  const store = storage();
-  if (!store) return;
-  const data = {
-    cash: S.player.cash,
-    missionIndex: S.mission.active ? S.mission.index : S.stats.missionsDone,
-    packagesFound: S.stats.packagesFound,
-    packages: S.packages.map((p) => p.found),
-    time: Math.floor(S.time),
-    version: 6,
-  };
   try {
-    store.setItem(SAVE_KEY, JSON.stringify(data));
-  } catch {
-    // Storage full or unavailable: the game keeps playing.
+    const data = {
+      version: 7,
+      missionIndex: S.mission.index,
+      missionsDone: S.stats.missionsDone,
+      cash: S.player.cash,
+      health: S.player.health,
+      packagesFound: S.stats.packagesFound,
+      weapons: S.player.weapons,
+      weapon: S.player.weapon,
+      x: S.player.x,
+      y: S.player.y,
+      time: S.time,
+    };
+    globalThis.localStorage.setItem(KEY, JSON.stringify(data));
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
-/** Clear the saved game. */
-export function clearSave() {
-  const store = storage();
-  if (!store) return;
+export function loadSave() {
   try {
-    store.removeItem(SAVE_KEY);
-  } catch {
-    // Ignore.
+    const raw = globalThis.localStorage.getItem(KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return null;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+export function clearSave() {
+  try {
+    globalThis.localStorage.removeItem(KEY);
+  } catch (e) {
+    // No storage available: nothing to clear.
   }
 }

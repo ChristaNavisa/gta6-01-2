@@ -1,605 +1,415 @@
-// Verde Bay in 3D: three.js scene, dusk lighting, the island city, traffic,
-// the chase camera and the screenshot presets. The sim owns the state;
-// this module only draws it.
+// VERDE BAY 3D v7 — the THREE.js renderer: golden-hour island city, traffic,
+// police, helicopter, roadblocks, packages and the chase camera.
+// Reads the sim state S every frame; the sim never imports this file.
 
-import 'three';
+import { COLORS } from './config.js';
 
-// The vendored three.min.js is the UMD build (r160): it sets window.THREE
-// and has no ESM exports, so a namespace import would be empty.
-const THREE = window.THREE;
-import { WORLD, DUSK } from './config.js';
-import { DISTRICTS } from './city.js';
-import { particles, updateParticles, makeGlowTexture } from './effects.js';
-import { MISSIONS } from './missions.js';
-import { clamp, lerp } from './util.js';
+const OX = 1700; // sim x -> world x
+const OZ = 1100; // sim y -> world z
 
-const SCALE_X = 1024 / WORLD.width;
-const SCALE_Y = 660 / WORLD.height;
-
-function makeSkyTexture() {
-  const c = document.createElement('canvas');
-  c.width = 16;
-  c.height = 512;
-  const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0, '#1d2547');
-  grad.addColorStop(0.45, '#5b3a6e');
-  grad.addColorStop(0.75, '#c65f4e');
-  grad.addColorStop(1, '#ff9e57');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 16, 512);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+function wX(x) {
+  return x - OX;
+}
+function wZ(y) {
+  return y - OZ;
 }
 
-function makeWindowTexture() {
-  const c = document.createElement('canvas');
-  c.width = 128;
-  c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = '#aab0bb';
-  g.fillRect(0, 0, 128, 256);
-  for (let y = 8; y < 248; y += 16) {
-    for (let x = 8; x < 120; x += 16) {
-      const lit = Math.random() < 0.42;
-      g.fillStyle = lit ? '#ffd166' : '#2b3440';
-      g.fillRect(x, y, 9, 11);
-    }
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
+export function createRenderer(canvas, S) {
+  const T = globalThis.THREE;
+  const renderer = new T.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setSize(window.innerWidth, window.innerHeight);
 
-function drawGroundTexture(city) {
-  const c = document.createElement('canvas');
-  c.width = 1024;
-  c.height = 660;
-  const g = c.getContext('2d');
-  const X = (x) => x * SCALE_X;
-  const Y = (y) => y * SCALE_Y;
-  // Water first: the channel, the sea, and the water around Isla Verde.
-  g.fillStyle = '#1d4e89';
-  g.fillRect(0, 0, 1024, 660);
-  // Land districts.
-  for (const d of DISTRICTS) {
-    g.fillStyle = d.ground;
-    g.fillRect(X(d.x0), Y(d.y0), X(d.x1 - d.x0), Y(d.y1 - d.y0));
-  }
-  // The bridge deck across the channel.
-  g.fillStyle = '#7a7d84';
-  g.fillRect(X(WORLD.channelX0), Y(WORLD.bridgeY0), X(WORLD.channelX1 - WORLD.channelX0), Y(WORLD.bridgeY1 - WORLD.bridgeY0));
-  // Roads: dark asphalt strips on the 200px grid, with center dashes.
-  g.fillStyle = '#2f3237';
-  for (let x = 0; x <= WORLD.width; x += 200) {
-    if (x >= WORLD.channelX0 && x < WORLD.channelX1) continue;
-    g.fillRect(X(x) - 6, 0, 13, 660);
-  }
-  for (let y = 0; y <= WORLD.height; y += 200) {
-    g.fillRect(0, Y(y) - 6, 1024, 13);
-  }
-  // The bridge carries its road across the channel.
-  g.fillStyle = '#2f3237';
-  g.fillRect(X(WORLD.channelX0), Y(1000) - 6, X(WORLD.channelX1 - WORLD.channelX0), 13);
-  g.fillRect(X(WORLD.channelX0), Y(1200) - 6, X(WORLD.channelX1 - WORLD.channelX0), 13);
-  // Center dashes on the main roads.
-  g.fillStyle = '#e8c15a';
-  for (let x = 0; x <= WORLD.width; x += 200) {
-    if (x >= WORLD.channelX0 && x < WORLD.channelX1) continue;
-    for (let y = 0; y < WORLD.height; y += 44) {
-      g.fillRect(X(x) - 1, Y(y), 2, 14);
-    }
-  }
-  for (let y = 0; y <= WORLD.height; y += 200) {
-    for (let x = 0; x < WORLD.width; x += 44) {
-      if (x >= WORLD.channelX0 && x < WORLD.channelX1) continue;
-      g.fillRect(X(x), Y(y) - 1, 14, 2);
-    }
-  }
-  // Marina docks.
-  g.fillStyle = '#8a7a5a';
-  g.fillRect(X(2080), Y(1860), X(120), Y(14));
-  g.fillRect(X(2220), Y(1900), X(120), Y(14));
-  // Beach shoreline highlight.
-  g.fillStyle = '#f7e3b0';
-  g.fillRect(0, Y(2020), X(1700), Y(30));
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
+  const scene = new T.Scene();
+  scene.background = new T.Color(COLORS.sky);
+  scene.fog = new T.Fog(new T.Color(COLORS.sky), 700, 2800);
 
-const geoCache = new Map();
-function boxGeo(w, h, d) {
-  const key = `box:${w},${h},${d}`;
-  if (!geoCache.has(key)) geoCache.set(key, new THREE.BoxGeometry(w, h, d));
-  return geoCache.get(key);
-}
-const matCache = new Map();
-function lambert(color) {
-  if (!matCache.has(color)) matCache.set(color, new THREE.MeshLambertMaterial({ color }));
-  return matCache.get(color);
-}
-function basic(color) {
-  const key = `basic:${color}`;
-  if (!matCache.has(key)) matCache.set(key, new THREE.MeshBasicMaterial({ color }));
-  return matCache.get(key);
-}
-
-/** Build one car group (body, cabin, wheels, lights). Forward is +x. */
-function makeCarMesh(car) {
-  const group = new THREE.Group();
-  const isTruck = car.type === 'truck';
-  const len = isTruck ? 72 : 56;
-  const wid = isTruck ? 36 : 30;
-  const bodyH = isTruck ? 18 : 12;
-  const body = new THREE.Mesh(boxGeo(len, bodyH, wid), lambert(car.color));
-  body.position.y = 8;
-  group.add(body);
-  const cabin = new THREE.Mesh(
-    boxGeo(isTruck ? 22 : 28, 10, wid - 4),
-    new THREE.MeshLambertMaterial({ color: '#141c28' }),
-  );
-  cabin.position.set(isTruck ? len / 2 - 16 : -4, bodyH + 5, 0);
-  group.add(cabin);
-  const wheelGeo = new THREE.CylinderGeometry(6, 6, 4, 10);
-  const wheelMat = new THREE.MeshLambertMaterial({ color: '#111111' });
-  for (const [wx, wz] of [[-len / 2 + 12, -wid / 2], [-len / 2 + 12, wid / 2], [len / 2 - 12, -wid / 2], [len / 2 - 12, wid / 2]]) {
-    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-    wheel.rotation.x = Math.PI / 2;
-    wheel.position.set(wx, 6, wz);
-    group.add(wheel);
-  }
-  const headMat = basic('#fff3b0');
-  for (const wz of [-9, 9]) {
-    const light = new THREE.Mesh(boxGeo(2, 3, 5), headMat);
-    light.position.set(len / 2, 8, wz);
-    group.add(light);
-  }
-  const tailMat = basic('#ff2a2a');
-  for (const wz of [-9, 9]) {
-    const light = new THREE.Mesh(boxGeo(2, 3, 5), tailMat);
-    light.position.set(-len / 2, 8, wz);
-    group.add(light);
-  }
-  if (car.type === 'taxi') {
-    const sign = new THREE.Mesh(boxGeo(16, 5, 10), basic('#ffd60a'));
-    sign.position.set(-4, bodyH + 13, 0);
-    group.add(sign);
-  }
-  if (car.isCop) {
-    const red = new THREE.Mesh(boxGeo(8, 4, 8), basic('#ff2a2a'));
-    red.position.set(0, bodyH + 12, -8);
-    const blue = new THREE.Mesh(boxGeo(8, 4, 8), basic('#2277ff'));
-    blue.position.set(0, bodyH + 12, 8);
-    group.add(red);
-    group.add(blue);
-    group.userData.flash = { red, blue };
-  }
-  return group;
-}
-
-/** Build one pedestrian figure (body + head). */
-function makePedMesh(color) {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(boxGeo(11, 22, 8), lambert(color));
-  body.position.y = 11;
-  group.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(4.5, 8, 8), lambert('#e8b98a'));
-  head.position.y = 26;
-  group.add(head);
-  return group;
-}
-
-/** Create the renderer + scene for a game state. Returns { render(S, dt) }. */
-export function createWorld(canvas, S) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  const scene = new THREE.Scene();
-  scene.background = makeSkyTexture();
-  scene.fog = new THREE.Fog(new THREE.Color(DUSK.fog), 500, 2800);
-
-  const hemi = new THREE.HemisphereLight(0x8a7bd8, 0x4a3b2f, 1.0);
+  const hemi = new T.HemisphereLight(0xffe0b3, 0x3a5f4a, 0.95);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffb347, 1.6);
-  sun.position.set(-900, 420, 300);
-  sun.target.position.set(1700, 0, 1100);
+  const sun = new T.DirectionalLight(0xffdfb0, 1.7);
+  sun.position.set(900, 1100, -500);
   scene.add(sun);
-  scene.add(sun.target);
+  const fill = new T.DirectionalLight(0x9db8ff, 0.35);
+  fill.position.set(-600, 400, 800);
+  scene.add(fill);
 
-  // Low sun disc on the western horizon.
-  const sunSprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(makeGlowTexture()), color: 0xffb347, transparent: true, depthWrite: false }),
-  );
-  sunSprite.position.set(-400, 150, 1100);
-  sunSprite.scale.set(420, 420, 1);
-  scene.add(sunSprite);
+  const boxGeo = new T.BoxGeometry(1, 1, 1);
+  const cylGeo = new T.CylinderGeometry(1, 1, 1, 8);
+  const coneGeo = new T.ConeGeometry(1, 1, 8);
+  const sphereGeo = new T.SphereGeometry(1, 10, 8);
+  const planeGeo = new T.PlaneGeometry(1, 1);
 
-  // Ground.
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(WORLD.width, WORLD.height),
-    new THREE.MeshLambertMaterial({ map: drawGroundTexture(S.city) }),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(WORLD.width / 2, 0, WORLD.height / 2);
-  scene.add(ground);
-
-  // Water overlays (channel, sea, around Isla Verde) for a reflective sheen.
-  const waterMat = new THREE.MeshPhongMaterial({ color: 0x2a6db0, transparent: true, opacity: 0.5, shininess: 140, specular: 0xffcf99 });
-  const waterRects = [
-    [WORLD.channelX0, 0, WORLD.channelX1 - WORLD.channelX0, WORLD.height],
-    [0, WORLD.seaY0, WORLD.width, WORLD.height - WORLD.seaY0],
-    [WORLD.islaX0, 0, WORLD.width - WORLD.islaX0, 700],
-    [WORLD.islaX0, 1500, WORLD.width - WORLD.islaX0, WORLD.height - 1500],
-  ];
-  for (const [x, y, w, h] of waterRects) {
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), waterMat);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.set(x + w / 2, 0.5, y + h / 2);
-    scene.add(plane);
+  const lambertCache = new Map();
+  function lambert(color) {
+    if (!lambertCache.has(color)) lambertCache.set(color, new T.MeshLambertMaterial({ color }));
+    return lambertCache.get(color);
+  }
+  const basicCache = new Map();
+  function basic(color) {
+    if (!basicCache.has(color)) basicCache.set(color, new T.MeshBasicMaterial({ color }));
+    return basicCache.get(color);
   }
 
-  const city = S.city;
-
-  // Buildings: one instanced mesh for walls (window texture), one for roofs.
-  const wallTex = makeWindowTexture();
-  const wallMat = new THREE.MeshLambertMaterial({ map: wallTex });
-  const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), wallMat, Math.max(1, city.buildings.length));
-  const roofs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff }), Math.max(1, city.buildings.length));
-  const m4 = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const wallTint = new THREE.Color();
-  const roofColor = new THREE.Color();
-  city.buildings.forEach((b, i) => {
-    m4.compose(new THREE.Vector3(b.x + b.w / 2, b.height / 2, b.y + b.d / 2), q, new THREE.Vector3(b.w, b.height, b.d));
-    walls.setMatrixAt(i, m4);
-    const shade = 0.82 + ((i * 37) % 20) / 100;
-    wallTint.setRGB(shade, shade * 0.96, shade * 0.92);
-    walls.setColorAt(i, wallTint);
-    m4.compose(new THREE.Vector3(b.x + b.w / 2, b.height + 1.5, b.y + b.d / 2), q, new THREE.Vector3(b.w + 2, 3, b.d + 2));
-    roofs.setMatrixAt(i, m4);
-    roofColor.set(b.roof);
-    roofs.setColorAt(i, roofColor);
-  });
-  walls.instanceMatrix.needsUpdate = true;
-  roofs.instanceMatrix.needsUpdate = true;
-  if (walls.instanceColor) walls.instanceColor.needsUpdate = true;
-  if (roofs.instanceColor) roofs.instanceColor.needsUpdate = true;
-  scene.add(walls);
-  scene.add(roofs);
-
-  // Smokestacks on industrial buildings.
-  const stackBuildings = city.buildings.filter((b) => b.stack);
-  if (stackBuildings.length > 0) {
-    const stacks = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(4, 5.5, 42, 8),
-      new THREE.MeshLambertMaterial({ color: '#8a8580' }),
-      stackBuildings.length,
-    );
-    stackBuildings.forEach((b, i) => {
-      m4.compose(new THREE.Vector3(b.x + b.w - 12, b.height + 21, b.y + 12), q, new THREE.Vector3(1, 1, 1));
-      stacks.setMatrixAt(i, m4);
-    });
-    stacks.instanceMatrix.needsUpdate = true;
-    scene.add(stacks);
+  function addBox(x, y, z, sx, sy, sz, mat, parent) {
+    const m = new T.Mesh(boxGeo, mat);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    (parent || scene).add(m);
+    return m;
   }
 
-  // Neon signs on the Strip: glowing face plates + tall sign poles.
-  const neonBuildings = city.buildings.filter((b) => b.neon);
-  if (neonBuildings.length > 0) {
-    const signs = new THREE.InstancedMesh(
-      new THREE.PlaneGeometry(34, 9),
-      new THREE.MeshBasicMaterial({ color: 0xffffff }),
-      neonBuildings.length,
-    );
-    const signColor = new THREE.Color();
-    neonBuildings.forEach((b, i) => {
-      m4.compose(new THREE.Vector3(b.x + b.w / 2, b.height * 0.62, b.y + b.d + 1.5), q, new THREE.Vector3(1, 1, 1));
-      signs.setMatrixAt(i, m4);
-      signColor.set(b.sign || '#ff2e88');
-      signs.setColorAt(i, signColor);
-    });
-    signs.instanceMatrix.needsUpdate = true;
-    if (signs.instanceColor) signs.instanceColor.needsUpdate = true;
-    scene.add(signs);
-  }
+  // --- static city ------------------------------------------------------------
+  // Water everywhere below, land as two slabs (mainland + Isla Verde).
+  const water = new T.Mesh(planeGeo, lambert(COLORS.sea));
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(0, -0.6, 0);
+  water.scale.set(4200, 3000, 1);
+  scene.add(water);
 
-  // Palms: trunks + canopies, instanced.
-  const palmCount = Math.max(1, city.palms.length);
-  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(2.2, 3.4, 26, 6), new THREE.MeshLambertMaterial({ color: '#7a5230' }), palmCount);
-  const canopies = new THREE.InstancedMesh(new THREE.ConeGeometry(15, 20, 6), new THREE.MeshLambertMaterial({ color: '#2f8f4e' }), palmCount);
-  city.palms.forEach((p, i) => {
-    m4.compose(new THREE.Vector3(p.x, 13, p.y), q, new THREE.Vector3(1, 1, 1));
-    trunks.setMatrixAt(i, m4);
-    m4.compose(new THREE.Vector3(p.x, 32, p.y), q, new THREE.Vector3(1, 0.7, 1));
-    canopies.setMatrixAt(i, m4);
-  });
-  trunks.instanceMatrix.needsUpdate = true;
-  canopies.instanceMatrix.needsUpdate = true;
-  scene.add(trunks);
-  scene.add(canopies);
+  const mainland = new T.Mesh(planeGeo, lambert(COLORS.grass));
+  mainland.rotation.x = -Math.PI / 2;
+  mainland.position.set(wX(1310), 0, wZ(1100));
+  mainland.scale.set(2620, 2200, 1);
+  scene.add(mainland);
 
-  // Street lamps: poles + warm glowing bulbs.
-  const lampCount = Math.max(1, city.lamps.length);
-  const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1.6, 34, 6), new THREE.MeshLambertMaterial({ color: '#2b2b2b' }), lampCount);
-  const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(3.4, 8, 8), new THREE.MeshBasicMaterial({ color: '#ffd166' }), lampCount);
-  city.lamps.forEach((p, i) => {
-    m4.compose(new THREE.Vector3(p.x, 17, p.y), q, new THREE.Vector3(1, 1, 1));
-    poles.setMatrixAt(i, m4);
-    m4.compose(new THREE.Vector3(p.x, 35, p.y), q, new THREE.Vector3(1, 1, 1));
-    bulbs.setMatrixAt(i, m4);
-  });
-  poles.instanceMatrix.needsUpdate = true;
-  bulbs.instanceMatrix.needsUpdate = true;
-  scene.add(poles);
-  scene.add(bulbs);
+  const isla = new T.Mesh(planeGeo, lambert('#8fae6d'));
+  isla.rotation.x = -Math.PI / 2;
+  isla.position.set(wX(3130), 0, wZ(1100));
+  isla.scale.set(460, 2200, 1);
+  scene.add(isla);
 
-  // The bridge: deck, rails and two towers.
-  const deck = new THREE.Mesh(boxGeo(WORLD.channelX1 - WORLD.channelX0 + 40, 6, WORLD.bridgeY1 - WORLD.bridgeY0), lambert('#7a7d84'));
-  deck.position.set((WORLD.channelX0 + WORLD.channelX1) / 2, 3, (WORLD.bridgeY0 + WORLD.bridgeY1) / 2);
-  scene.add(deck);
-  for (const z of [WORLD.bridgeY0 + 4, WORLD.bridgeY1 - 4]) {
-    const rail = new THREE.Mesh(boxGeo(WORLD.channelX1 - WORLD.channelX0 + 40, 3, 3), lambert('#c9a227'));
-    rail.position.set((WORLD.channelX0 + WORLD.channelX1) / 2, 8, z);
-    scene.add(rail);
-  }
-  // Two pairs of towers flanking the deck — never on the roadway itself,
-  // or they block the chase camera (and the road) mid-bridge.
-  for (const x of [2670, 2830]) {
-    for (const z of [WORLD.bridgeY0 - 14, WORLD.bridgeY1 + 14]) {
-      const tower = new THREE.Mesh(boxGeo(14, 90, 16), lambert('#e8e0d0'));
-      tower.position.set(x, 45, z);
-      scene.add(tower);
+  // Beach sand along the south shore.
+  const sand = new T.Mesh(planeGeo, lambert(COLORS.sand));
+  sand.rotation.x = -Math.PI / 2;
+  sand.position.set(wX(1300), 0.3, wZ(1740));
+  sand.scale.set(1800, 640, 1);
+  scene.add(sand);
+
+  // Roads: dark strips with pale dashes.
+  for (const r of S.city.roads) {
+    const len = Math.hypot(r.x2 - r.x1, r.y2 - r.y1);
+    const horizontal = r.y1 === r.y2;
+    const road = new T.Mesh(planeGeo, lambert(COLORS.asphalt));
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(wX((r.x1 + r.x2) / 2), 0.5, wZ((r.y1 + r.y2) / 2));
+    road.scale.set(horizontal ? len : 36, horizontal ? 36 : len, 1);
+    scene.add(road);
+    // Center dashes.
+    const n = Math.floor(len / 70);
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const dx = r.x1 + (r.x2 - r.x1) * t;
+      const dy = r.y1 + (r.y2 - r.y1) * t;
+      const dash = new T.Mesh(planeGeo, basic('#e8e8e8'));
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(wX(dx), 0.6, wZ(dy));
+      dash.scale.set(horizontal ? 26 : 3, horizontal ? 3 : 26, 1);
+      scene.add(dash);
     }
   }
 
-  // The ferry at the marina dock + a cargo ship in the channel.
-  function makeBoat(x, y, angle, len, color) {
-    const boat = new THREE.Group();
-    const hull = new THREE.Mesh(boxGeo(len, 14, 34), lambert(color));
-    hull.position.y = 7;
-    boat.add(hull);
-    const cabin = new THREE.Mesh(boxGeo(len * 0.4, 12, 26), lambert('#f7f3ea'));
-    cabin.position.set(-len * 0.15, 20, 0);
-    boat.add(cabin);
-    boat.position.set(x, 0, y);
-    boat.rotation.y = -angle;
-    return boat;
-  }
-  scene.add(makeBoat(city.ferry.x, city.ferry.y, city.ferry.angle, 120, '#2e5fa3'));
-  scene.add(makeBoat(city.ship.x, city.ship.y, city.ship.angle, 170, '#8a2f2f'));
+  // The bridge over the channel.
+  const bridge = new T.Mesh(planeGeo, lambert('#6b6f76'));
+  bridge.rotation.x = -Math.PI / 2;
+  bridge.position.set(wX(2760), 1.2, wZ(1100));
+  bridge.scale.set(300, 44, 1);
+  scene.add(bridge);
 
-  // Mission marker: gold beam + floating diamond.
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(7, 7, 150, 12, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffd60a, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }),
-  );
-  beam.position.y = 75;
-  scene.add(beam);
-  const diamond = new THREE.Mesh(new THREE.OctahedronGeometry(13), basic('#ffd60a'));
-  diamond.position.y = 130;
-  scene.add(diamond);
-
-  // Hidden packages: spinning gold octahedrons.
-  const packageMeshes = city.packages.map((pkg) => {
-    const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(9), basic('#ffd60a'));
-    mesh.position.set(pkg.x, 14, pkg.y);
-    scene.add(mesh);
-    return mesh;
-  });
-
-  // Particles: one Points cloud, soft radial sprites.
-  const MAX_PARTICLES = 600;
-  const particleGeo = new THREE.BufferGeometry();
-  const particlePos = new Float32Array(MAX_PARTICLES * 3);
-  const particleCol = new Float32Array(MAX_PARTICLES * 3);
-  particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
-  particleGeo.setAttribute('color', new THREE.BufferAttribute(particleCol, 3));
-  const particleMat = new THREE.PointsMaterial({
-    size: 11,
-    map: new THREE.CanvasTexture(makeGlowTexture()),
-    transparent: true,
-    depthWrite: false,
-    vertexColors: true,
-    sizeAttenuation: true,
-  });
-  const points = new THREE.Points(particleGeo, particleMat);
-  points.frustumCulled = false;
-  scene.add(points);
-
-  const camera = new THREE.PerspectiveCamera(62, 1, 1, 6000);
-  const carMeshes = new Map();
-  const pedMeshes = new Map();
-  const copFlash = new Map();
-  let playerMesh = null;
-  let gangMeshes = new Map();
-  let shotPreset = null;
-  const camPos = new THREE.Vector3(1100, 300, 1400);
-  const camTarget = new THREE.Vector3(1100, 0, 900);
-
-  function syncCar(car) {
-    let mesh = carMeshes.get(car);
-    if (!mesh) {
-      mesh = makeCarMesh(car);
-      carMeshes.set(car, mesh);
-      scene.add(mesh);
-      if (car.isCop && mesh.userData.flash) copFlash.set(car, mesh.userData.flash);
+  // Buildings.
+  for (const b of S.city.buildings) {
+    const wall = new T.Color(b.color).multiplyScalar(0.72);
+    const body = addBox(wX(b.x), b.height / 2, wZ(b.y), b.w, b.height, b.d, lambert('#' + wall.getHexString()));
+    body.userData.building = b;
+    addBox(wX(b.x), b.height + 0.8, wZ(b.y), b.w + 2, 1.6, b.d + 2, lambert(b.roof));
+    if (b.neon) {
+      const neonColor = ['#00e5ff', '#ff2ea6', '#ffe600'][Math.floor(Math.random() * 3)];
+      const strip = addBox(wX(b.x), b.height * 0.72, wZ(b.y - b.d / 2 - 0.6), b.w * 0.7, 2.2, 1, basic(neonColor));
+      strip.userData.neon = true;
     }
-    mesh.position.set(car.x, 0, car.y);
-    mesh.rotation.y = -car.angle;
-    return mesh;
-  }
-
-  function syncPed(ped, key, color) {
-    let mesh = pedMeshes.get(key);
-    if (!mesh) {
-      mesh = makePedMesh(color);
-      pedMeshes.set(key, mesh);
-      scene.add(mesh);
+    if (b.stack) {
+      const stack = new T.Mesh(cylGeo, lambert('#8a8f96'));
+      stack.position.set(wX(b.x + b.w / 4), b.height + 13, wZ(b.y));
+      stack.scale.set(3.5, 26, 3.5);
+      scene.add(stack);
     }
-    mesh.position.set(ped.x, 0, ped.y);
-    mesh.rotation.y = -ped.angle;
-    return mesh;
   }
 
-  function resize() {
-    const w = canvas.clientWidth || window.innerWidth;
-    const h = canvas.clientHeight || window.innerHeight;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+  // Palms.
+  for (const palm of S.city.palms) {
+    const trunk = new T.Mesh(cylGeo, lambert('#8a6b48'));
+    trunk.position.set(wX(palm.x), palm.h / 2, wZ(palm.y));
+    trunk.scale.set(1.4, palm.h, 1.4);
+    scene.add(trunk);
+    const top = new T.Mesh(sphereGeo, lambert('#2f7d32'));
+    top.position.set(wX(palm.x), palm.h + 3, wZ(palm.y));
+    top.scale.set(7, 3.5, 7);
+    scene.add(top);
   }
-  window.addEventListener('resize', resize);
-  resize();
 
-  return {
+  // --- dynamic objects ----------------------------------------------------------
+  const carGroups = new Map();
+  const pedMeshes = [];
+  const packageMeshes = [];
+  const gangMeshes = new Map();
+  let roadblockGroup = null;
+  let heliGroup = null;
+  let heliRotor = null;
+  let playerGroup = null;
+
+  function buildCarMesh(car) {
+    const g = new T.Group();
+    const isTruck = car.type === 'truck';
+    const isCop = car.type === 'cop';
+    const bodyLen = isTruck ? 7 : 4.8;
+    const bodyH = isTruck ? 2.2 : 1.1;
+    const body = new T.Mesh(boxGeo, lambert(car.color));
+    body.scale.set(bodyLen, bodyH, 2.1);
+    body.position.y = 0.85;
+    g.add(body);
+    const cabin = new T.Mesh(boxGeo, lambert(isCop ? '#dfe8ee' : '#1c2733'));
+    cabin.scale.set(isTruck ? 2.2 : 2.4, 0.9, 1.8);
+    cabin.position.set(isTruck ? 1.4 : -0.3, bodyH + 0.45, 0);
+    g.add(cabin);
+    const skirt = new T.Mesh(boxGeo, lambert('#151515'));
+    skirt.scale.set(bodyLen * 0.94, 0.5, 2.15);
+    skirt.position.y = 0.35;
+    g.add(skirt);
+    if (isCop) {
+      const bar = new T.Mesh(boxGeo, basic('#ff2e4d'));
+      bar.scale.set(1.2, 0.35, 0.6);
+      bar.position.set(-0.3, bodyH + 1.05, 0);
+      g.add(bar);
+      g.userData.lightBar = bar;
+      const bar2 = new T.Mesh(boxGeo, basic('#2e7dff'));
+      bar2.scale.set(1.2, 0.35, 0.6);
+      bar2.position.set(-0.3, bodyH + 1.05, 0);
+      bar2.visible = false;
+      g.add(bar2);
+      g.userData.lightBar2 = bar2;
+    }
+    if (car.type === 'taxi') {
+      const sign = new T.Mesh(boxGeo, basic('#f4b400'));
+      sign.scale.set(1.1, 0.4, 0.7);
+      sign.position.set(-0.3, bodyH + 1.05, 0);
+      g.add(sign);
+    }
+    return g;
+  }
+
+  function buildPersonMesh(color) {
+    const g = new T.Group();
+    const body = new T.Mesh(boxGeo, lambert(color));
+    body.scale.set(1.1, 2.2, 0.7);
+    body.position.y = 1.5;
+    g.add(body);
+    const head = new T.Mesh(sphereGeo, lambert('#e8b98a'));
+    head.scale.set(0.55, 0.55, 0.55);
+    head.position.y = 2.9;
+    g.add(head);
+    return g;
+  }
+
+  for (const ped of S.peds) {
+    const m = buildPersonMesh(ped.color);
+    scene.add(m);
+    pedMeshes.push(m);
+  }
+
+  for (const pkg of S.packages) {
+    const m = new T.Mesh(boxGeo, basic('#2ec4b6'));
+    m.scale.set(2.2, 2.2, 2.2);
+    m.position.set(wX(pkg.x), 2.2, wZ(pkg.y));
+    scene.add(m);
+    packageMeshes.push(m);
+  }
+
+  playerGroup = buildPersonMesh('#2e5fa3');
+  scene.add(playerGroup);
+
+  heliGroup = new T.Group();
+  {
+    const body = new T.Mesh(boxGeo, lambert('#212529'));
+    body.scale.set(7, 2.4, 3);
+    body.position.y = 0;
+    heliGroup.add(body);
+    const tail = new T.Mesh(boxGeo, lambert('#212529'));
+    tail.scale.set(5, 1, 1.2);
+    tail.position.set(-5.5, 0.4, 0);
+    heliGroup.add(tail);
+    heliRotor = new T.Mesh(boxGeo, lambert('#151515'));
+    heliRotor.scale.set(11, 0.25, 0.8);
+    heliRotor.position.y = 1.6;
+    heliGroup.add(heliRotor);
+    const light = new T.Mesh(sphereGeo, basic('#ff2e4d'));
+    light.scale.set(0.9, 0.9, 0.9);
+    light.position.set(2, -1.4, 0);
+    heliGroup.add(light);
+    heliGroup.visible = false;
+    scene.add(heliGroup);
+  }
+
+  const camera = new T.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.5, 5000);
+  const camState = { x: 0, y: 600, z: 900, orbit: 0 };
+  let mode = 'menu';
+
+  const R = {
     scene,
-    camera,
-    renderer,
-    setShotPreset(name) {
-      shotPreset = name;
-    },
-    render(S, dt) {
-      updateParticles(dt);
-      const p = S.player;
-
-      // Cars: the player's car, traffic, parked cars and cops.
-      const seenCars = new Set();
-      for (const car of [...S.cars, ...S.cops]) {
-        syncCar(car);
-        seenCars.add(car);
-      }
-      for (const [car, mesh] of [...carMeshes]) {
-        if (!seenCars.has(car)) {
-          scene.remove(mesh);
-          carMeshes.delete(car);
-          copFlash.delete(car);
-        }
-      }
-      // Cop light bars flash with the clock.
-      const flashOn = Math.floor(S.time * 3) % 2 === 0;
-      for (const { red, blue } of copFlash.values()) {
-        red.visible = flashOn;
-        blue.visible = !flashOn;
-      }
-
-      // Pedestrians + gang + the player on foot.
-      const seenPeds = new Set();
-      S.peds.forEach((ped, i) => {
-        syncPed(ped, `ped${i}`, ped.color);
-        seenPeds.add(`ped${i}`);
-      });
-      const seenGang = new Set();
-      S.gang.forEach((g, i) => {
-        if (g.hp <= 0) return;
-        syncPed(g, `gang${i}`, '#7a1f1f');
-        seenGang.add(`gang${i}`);
-      });
-      for (const [key, mesh] of [...pedMeshes]) {
-        if (!seenPeds.has(key) && !seenGang.has(key) && key !== 'player') {
-          scene.remove(mesh);
-          pedMeshes.delete(key);
-        }
-      }
-      if (p.onFoot) {
-        if (!playerMesh) {
-          playerMesh = makePedMesh('#2456c8');
-          pedMeshes.set('player', playerMesh);
-          scene.add(playerMesh);
-        }
-        playerMesh.position.set(p.x, 0, p.y);
-        playerMesh.rotation.y = -p.angle;
-        playerMesh.visible = true;
-      } else if (playerMesh) {
-        playerMesh.visible = false;
-      }
-
-      // Packages spin until collected.
-      S.packages.forEach((pkg, i) => {
-        const mesh = packageMeshes[i];
-        if (!mesh) return;
-        mesh.visible = !pkg.found;
-        mesh.rotation.y += dt * 2;
-        mesh.position.y = 14 + Math.sin(S.time * 2 + i) * 4;
-      });
-
-      // Mission marker over the current objective.
-      let marker = null;
-      if (S.mission.active) {
-        const def = MISSIONS[S.mission.index];
-        const stage = def ? def.stages[S.mission.stage] : null;
-        if (stage) {
-          if (stage.type === 'steal' && S.mission.data.targetCar) {
-            marker = { x: S.mission.data.targetCar.x, y: S.mission.data.targetCar.y };
-          } else if (stage.target && S.city.places[stage.target]) {
-            marker = S.city.places[stage.target];
-          }
-        }
-      }
-      if (marker) {
-        beam.visible = true;
-        diamond.visible = true;
-        beam.position.set(marker.x, 75, marker.y);
-        diamond.position.set(marker.x, 130 + Math.sin(S.time * 2.4) * 8, marker.y);
-        diamond.rotation.y += dt * 1.6;
-      } else {
-        beam.visible = false;
-        diamond.visible = false;
-      }
-
-      // Particles.
-      const posAttr = particleGeo.getAttribute('position');
-      const colAttr = particleGeo.getAttribute('color');
-      const tmpColor = new THREE.Color();
-      for (let i = 0; i < MAX_PARTICLES; i++) {
-        const pt = particles[i];
-        if (pt) {
-          posAttr.setXYZ(i, pt.x, pt.z, pt.y);
-          tmpColor.set(pt.color);
-          const fade = 1 - pt.age / pt.life;
-          colAttr.setXYZ(i, tmpColor.r * fade, tmpColor.g * fade, tmpColor.b * fade);
-        } else {
-          posAttr.setXYZ(i, 0, -100, 0);
-          colAttr.setXYZ(i, 0, 0, 0);
-        }
-      }
-      posAttr.needsUpdate = true;
-      colAttr.needsUpdate = true;
-
-      // Camera: chase cam, or a fixed cinematic preset for screenshots.
+    snapToPlayer(S2) {
+      const p = S2.player;
       const fx = Math.cos(p.angle);
-      const fy = Math.sin(p.angle);
-      if (shotPreset === 'start') {
-        camPos.set(1380, 260, 1420);
-        camTarget.set(1080, 20, 900);
-      } else if (shotPreset === 'drive') {
-        camPos.set(p.x - fx * 150, 62, p.y - fy * 150);
-        camTarget.set(p.x + fx * 90, 14, p.y + fy * 90);
-      } else if (shotPreset === 'chase') {
-        camPos.set(p.x - fx * 190, 78, p.y - fy * 190);
-        camTarget.set(p.x + fx * 120, 12, p.y + fy * 120);
-      } else if (shotPreset === 'mission') {
-        camPos.set(p.x - fx * 130, 110, p.y - fy * 130 + 60);
-        camTarget.set(p.x + fx * 60, 16, p.y + fy * 60);
-      } else if (p.onFoot) {
-        const tx = p.x - fx * 74;
-        const ty = p.y - fy * 74;
-        camPos.x = lerp(camPos.x, tx, 1 - Math.pow(0.001, dt));
-        camPos.y = lerp(camPos.y, 46, 1 - Math.pow(0.001, dt));
-        camPos.z = lerp(camPos.z, ty, 1 - Math.pow(0.001, dt));
-        camTarget.set(p.x + fx * 50, 14, p.y + fy * 50);
-      } else {
-        const tx = p.x - fx * 148;
-        const ty = p.y - fy * 148;
-        camPos.x = lerp(camPos.x, tx, 1 - Math.pow(0.0005, dt));
-        camPos.y = lerp(camPos.y, 58, 1 - Math.pow(0.0005, dt));
-        camPos.z = lerp(camPos.z, ty, 1 - Math.pow(0.0005, dt));
-        camTarget.set(p.x + fx * 110, 12, p.y + fy * 110);
+      const fz = Math.sin(p.angle);
+      const dist = p.car ? 15 : 12;
+      camState.x = wX(p.x) - fx * dist;
+      camState.y = p.car ? 8 : 7;
+      camState.z = wZ(p.y) - fz * dist;
+    },
+    setMode(m) {
+      mode = m;
+    },
+    resize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    },
+    screenToGround(clientX, clientY) {
+      const v = new T.Vector2((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+      const rc = new T.Raycaster();
+      rc.setFromCamera(v, camera);
+      const plane = new T.Plane(new T.Vector3(0, 1, 0), 0);
+      const hit = new T.Vector3();
+      if (rc.ray.intersectPlane(plane, hit)) return { x: hit.x + OX, y: hit.z + OZ };
+      return null;
+    },
+    render(S2, dt) {
+      const p = S2.player;
+      // Cars.
+      const liveIds = new Set();
+      for (const car of S2.cars) {
+        liveIds.add(car.id);
+        let g = carGroups.get(car.id);
+        if (!g) {
+          g = buildCarMesh(car);
+          carGroups.set(car.id, g);
+          scene.add(g);
+        }
+        g.position.set(wX(car.x), 0, wZ(car.y));
+        g.rotation.y = -car.angle;
+        if (g.userData.lightBar) {
+          const flash = Math.floor(S2.time * 4) % 2 === 0;
+          g.userData.lightBar.visible = flash;
+          g.userData.lightBar2.visible = !flash;
+        }
       }
-      camera.position.copy(camPos);
-      camera.lookAt(camTarget);
+      for (const [id, g] of carGroups) {
+        if (!liveIds.has(id)) {
+          scene.remove(g);
+          carGroups.delete(id);
+        }
+      }
+      // Pedestrians.
+      for (let i = 0; i < S2.peds.length; i++) {
+        const ped = S2.peds[i];
+        const m = pedMeshes[i];
+        if (!m) continue;
+        m.visible = ped.state !== 'down';
+        m.position.set(wX(ped.x), ped.state === 'down' ? 0.4 : 0, wZ(ped.y));
+        m.rotation.y = -ped.angle;
+      }
+      // Packages.
+      for (let i = 0; i < S2.packages.length; i++) {
+        const pkg = S2.packages[i];
+        const m = packageMeshes[i];
+        if (!m) continue;
+        m.visible = !pkg.taken;
+        if (!pkg.taken) {
+          m.position.y = 2.2 + Math.sin(S2.time * 3 + i) * 0.5;
+          m.rotation.y = S2.time * 1.5 + i;
+        }
+      }
+      // Gang members.
+      const gang = (S2.mission.data && S2.mission.data.gang) || [];
+      const liveGang = new Set();
+      gang.forEach((g, i) => {
+        liveGang.add(i);
+        let m = gangMeshes.get(i);
+        if (!m) {
+          m = buildPersonMesh('#c1121f');
+          gangMeshes.set(i, m);
+          scene.add(m);
+        }
+        m.visible = g.hp > 0;
+        m.position.set(wX(g.x), 0, wZ(g.y));
+        m.rotation.y = -g.angle;
+      });
+      for (const [i, m] of gangMeshes) {
+        if (!liveGang.has(i)) {
+          scene.remove(m);
+          gangMeshes.delete(i);
+        }
+      }
+      // Roadblocks.
+      if (roadblockGroup) {
+        scene.remove(roadblockGroup);
+        roadblockGroup = null;
+      }
+      if (S2.roadblocks.length > 0) {
+        roadblockGroup = new T.Group();
+        for (const rb of S2.roadblocks) {
+          for (const off of [-14, 14]) {
+            const c = buildCarMesh({ type: 'cop', color: '#212529' });
+            const a = rb.angle;
+            c.position.set(wX(rb.x + Math.cos(a) * off), 0, wZ(rb.y + Math.sin(a) * off));
+            c.rotation.y = -a;
+            roadblockGroup.add(c);
+          }
+          const barrier = new T.Mesh(boxGeo, basic('#ff9f1c'));
+          barrier.scale.set(30, 1.6, 1.2);
+          barrier.position.set(wX(rb.x), 1.2, wZ(rb.y));
+          barrier.rotation.y = -rb.angle;
+          roadblockGroup.add(barrier);
+        }
+        scene.add(roadblockGroup);
+      }
+      // Helicopter.
+      if (S2.heli.active) {
+        heliGroup.visible = true;
+        heliGroup.position.set(wX(S2.heli.x), 120, wZ(S2.heli.y));
+        heliGroup.rotation.y = -Math.atan2(Math.sin(S2.heli.angle), Math.cos(S2.heli.angle)) + Math.PI / 2;
+        heliRotor.rotation.y = S2.heli.rotor;
+      } else {
+        heliGroup.visible = false;
+      }
+      // Player on foot.
+      if (p.onFoot) {
+        playerGroup.visible = true;
+        playerGroup.position.set(wX(p.x), 0, wZ(p.y));
+        playerGroup.rotation.y = -p.angle;
+      } else {
+        playerGroup.visible = false;
+      }
+      // Camera.
+      if (mode === 'menu') {
+        camState.orbit += dt * 0.045;
+        const cx = Math.cos(camState.orbit) * 1050;
+        const cz = Math.sin(camState.orbit) * 1050;
+        camera.position.set(cx, 520, cz);
+        camera.lookAt(wX(1150), 0, wZ(950));
+      } else {
+        const fx = Math.cos(p.angle);
+        const fz = Math.sin(p.angle);
+        const dist = p.car ? 15 : 12;
+        const height = p.car ? 8 : 7;
+        const tx = wX(p.x) - fx * dist;
+        const tz = wZ(p.y) - fz * dist;
+        const k = 1 - Math.pow(0.001, dt);
+        camState.x += (tx - camState.x) * k;
+        camState.y += (height - camState.y) * k;
+        camState.z += (tz - camState.z) * k;
+        camera.position.set(camState.x, camState.y, camState.z);
+        camera.lookAt(wX(p.x) + fx * 24, 2, wZ(p.y) + fz * 24);
+      }
       renderer.render(scene, camera);
     },
   };
+  return R;
 }

@@ -1,199 +1,252 @@
-// Verde Bay HUD: cash, wanted stars, mission tracker, nitro meter, the
-// package counter, the minimap and the start / busted / complete overlays.
-// All DOM, drawn over the 3D canvas; the sim never touches the DOM.
+// VERDE BAY 3D v7 — the HUD: minimap, wanted stars, cash, health, speed, weapons,
+// radio, mission objective, prompts, toasts, banners and the menu/shop panels.
+// Pure DOM: every update is guarded so a missing element can never throw.
 
-import { MISSIONS } from './missions.js';
-import { DISTRICTS } from './city.js';
-import { WORLD } from './config.js';
+import { fmtCash } from './util.js';
+import { WEAPONS, RADIO } from './config.js';
+import { districtNameAt } from './city.js';
+import { MISSIONS, missionObjective } from './missions.js';
 
-/** Build the HUD inside `root` and return { update(S), banner(text, sub), showStart(), hideStart() }. */
-export function createHud(root, S) {
-  root.innerHTML = `
-    <div id="hud-top">
-      <div id="hud-cash">$<span id="cash">0</span></div>
-      <div id="hud-mission">
-        <div id="mission-title">VERDE BAY</div>
-        <div id="mission-text">Welcome to Verde Bay</div>
-      </div>
-      <div id="hud-right">
-        <div id="wanted"></div>
-        <div id="hud-packages">◆ <span id="pkg">0</span>/10</div>
-      </div>
-    </div>
-    <div id="hud-bottom">
-      <div id="nitro-wrap"><div id="nitro-label">NITRO</div><div id="nitro-bar"><div id="nitro-fill"></div></div></div>
-      <div id="hud-hints">WASD drive / walk &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; SHIFT nitro / run &nbsp;·&nbsp; SPACE shoot / brake &nbsp;·&nbsp; M mute</div>
-      <div id="hud-speed"><span id="speed">0</span> mph</div>
-    </div>
-    <canvas id="minimap" width="220" height="150"></canvas>
-    <div id="banner" class="hidden"><div id="banner-title"></div><div id="banner-sub"></div></div>
-    <div id="overlay-start" class="overlay">
-      <div class="panel">
-        <h1>VERDE BAY <span>3D</span></h1>
-        <p class="tagline">NEON NIGHTS — an open-world crime story</p>
-        <p>Seven districts, an island across the bridge, ten story missions,
-        street races, a bank vault, and ten hidden packages. Steal cars,
-        outrun the Verde Bay PD, and take the city.</p>
-        <div class="missions-list" id="missions-list"></div>
-        <button id="btn-start">▶ &nbsp;START THE NIGHT</button>
-        <p class="controls">WASD move &nbsp;·&nbsp; E enter / exit car &nbsp;·&nbsp; SHIFT nitro &nbsp;·&nbsp; SPACE shoot &nbsp;·&nbsp; M mute</p>
-      </div>
-    </div>
-    <div id="overlay-busted" class="overlay hidden">
-      <div class="panel"><h1>BUSTED</h1><p>The Verde Bay PD caught you. $250 fine.</p><button id="btn-busted">BACK TO THE STREETS</button></div>
-    </div>
-    <div id="overlay-wasted" class="overlay hidden">
-      <div class="panel"><h1>WASTED</h1><p>You woke up at St. Verde Hospital. $250 gone.</p><button id="btn-wasted">BACK TO THE STREETS</button></div>
-    </div>`;
+function el(id) {
+  return document.getElementById(id);
+}
 
-  const cashEl = root.querySelector('#cash');
-  const missionTitle = root.querySelector('#mission-title');
-  const missionText = root.querySelector('#mission-text');
-  const wantedEl = root.querySelector('#wanted');
-  const pkgEl = root.querySelector('#pkg');
-  const nitroFill = root.querySelector('#nitro-fill');
-  const speedEl = root.querySelector('#speed');
-  const minimap = root.querySelector('#minimap');
-  const mm = minimap.getContext('2d');
-  const bannerEl = root.querySelector('#banner');
-  const bannerTitle = root.querySelector('#banner-title');
-  const bannerSub = root.querySelector('#banner-sub');
-  const startOverlay = root.querySelector('#overlay-start');
-  const bustedOverlay = root.querySelector('#overlay-busted');
-  const wastedOverlay = root.querySelector('#overlay-wasted');
+function setText(id, text) {
+  const n = el(id);
+  if (n) n.textContent = text;
+}
 
-  root.querySelector('#missions-list').innerHTML = MISSIONS.map(
-    (m, i) => `<div class="mission-row"><span class="mission-num">${i + 1}</span> ${m.title} <span class="mission-reward">$${m.reward.toLocaleString('en-US')}</span></div>`,
-  ).join('');
+function setVisible(id, on) {
+  const n = el(id);
+  if (n) n.classList.toggle('hidden', !on);
+}
 
-  let bannerTimer = null;
-  function banner(title, sub = '') {
-    bannerTitle.textContent = title;
-    bannerSub.textContent = sub;
-    bannerEl.classList.remove('hidden');
-    clearTimeout(bannerTimer);
-    bannerTimer = setTimeout(() => bannerEl.classList.add('hidden'), 3600);
-  }
+export function createHud(S, cb) {
+  const H = {
+    toastT: 0,
+    bannerT: 0,
+    minimapTick: 0,
+  };
+
+  const canvas = el('minimap');
+  const mctx = canvas ? canvas.getContext('2d') : null;
 
   function drawMinimap() {
-    const w = minimap.width;
-    const h = minimap.height;
-    const sx = w / WORLD.width;
-    const sy = h / WORLD.height;
-    mm.clearRect(0, 0, w, h);
-    mm.fillStyle = '#0d1526';
-    mm.fillRect(0, 0, w, h);
-    // Water.
-    mm.fillStyle = '#1d4e89';
-    mm.fillRect(WORLD.channelX0 * sx, 0, (WORLD.channelX1 - WORLD.channelX0) * sx, h);
-    mm.fillRect(0, WORLD.seaY0 * sy, w, h - WORLD.seaY0 * sy);
-    // Districts.
-    for (const d of DISTRICTS) {
-      mm.fillStyle = d.id === 'strip' ? '#3d2b5c' : d.id === 'beach' ? '#d9bd7f' : d.id === 'isla' ? '#5d8a4e' : '#3a4150';
-      mm.fillRect(d.x0 * sx, d.y0 * sy, (d.x1 - d.x0) * sx, (d.y1 - d.y0) * sy);
-    }
+    if (!mctx || !canvas) return;
+    const W = canvas.width;
+    const Hh = canvas.height;
+    const sx = W / 3400;
+    const sy = Hh / 2200;
+    mctx.clearRect(0, 0, W, Hh);
+    // Sea + land.
+    mctx.fillStyle = '#1e6f8e';
+    mctx.fillRect(0, 0, W, Hh);
+    mctx.fillStyle = '#5d7d4a';
+    mctx.fillRect(0, 0, 2620 * sx, Hh);
+    mctx.fillRect(2900 * sx, 700 * sy, 460 * sx, 800 * sy);
+    // Beach strip.
+    mctx.fillStyle = '#e8d5a3';
+    mctx.fillRect(800 * sx, 1400 * sy, 1000 * sx, 500 * sy);
     // Roads.
-    mm.strokeStyle = '#565b66';
-    mm.lineWidth = 1;
-    for (let x = 0; x <= WORLD.width; x += 200) {
-      mm.beginPath();
-      mm.moveTo(x * sx, 0);
-      mm.lineTo(x * sx, h);
-      mm.stroke();
+    mctx.strokeStyle = '#3a3f46';
+    mctx.lineWidth = 2;
+    for (const r of S.city.roads) {
+      mctx.beginPath();
+      mctx.moveTo(r.x1 * sx, r.y1 * sy);
+      mctx.lineTo(r.x2 * sx, r.y2 * sy);
+      mctx.stroke();
     }
-    for (let y = 0; y <= WORLD.height; y += 200) {
-      mm.beginPath();
-      mm.moveTo(0, y * sy);
-      mm.lineTo(w, y * sy);
-      mm.stroke();
-    }
-    // Hidden packages (gold dots).
+    // Hidden packages left.
+    mctx.fillStyle = '#2ec4b6';
     for (const pkg of S.packages) {
-      if (pkg.found) continue;
-      mm.fillStyle = '#ffd60a';
-      mm.beginPath();
-      mm.arc(pkg.x * sx, pkg.y * sy, 2.5, 0, Math.PI * 2);
-      mm.fill();
+      if (pkg.taken) continue;
+      mctx.fillRect(pkg.x * sx - 2, pkg.y * sy - 2, 4, 4);
     }
-    // Mission marker.
+    // Mission target.
     if (S.mission.active) {
-      const def = MISSIONS[S.mission.index];
-      const stage = def?.stages[S.mission.stage];
-      let target = null;
-      if (stage?.type === 'steal' && S.mission.data.targetCar) target = S.mission.data.targetCar;
-      else if (stage?.target) target = S.city.places[stage.target];
-      if (target) {
-        mm.fillStyle = '#ffd60a';
-        mm.beginPath();
-        mm.arc(target.x * sx, target.y * sy, 4, 0, Math.PI * 2);
-        mm.fill();
-        mm.strokeStyle = '#ffd60a';
-        mm.beginPath();
-        mm.arc(target.x * sx, target.y * sy, 7, 0, Math.PI * 2);
-        mm.stroke();
+      const stage = S.mission.def.stages[S.mission.stage];
+      const place = stage && S.city.places[stage.target];
+      if (place) {
+        const pulse = 5 + Math.sin(S.time * 5) * 2;
+        mctx.fillStyle = '#ffd60a';
+        mctx.beginPath();
+        mctx.arc(place.x * sx, place.y * sy, pulse, 0, Math.PI * 2);
+        mctx.fill();
+        mctx.fillStyle = '#000';
+        mctx.beginPath();
+        mctx.arc(place.x * sx, place.y * sy, 2, 0, Math.PI * 2);
+        mctx.fill();
       }
     }
-    // Cops (blue dots).
-    mm.fillStyle = '#4d8dff';
-    for (const cop of S.cops) {
-      mm.beginPath();
-      mm.arc(cop.x * sx, cop.y * sy, 2.5, 0, Math.PI * 2);
-      mm.fill();
+    // Cops.
+    mctx.fillStyle = '#ff2e4d';
+    for (const c of S.cops) mctx.fillRect(c.x * sx - 2, c.y * sy - 2, 4, 4);
+    for (const c of S.footCops) mctx.fillRect(c.x * sx - 2, c.y * sy - 2, 4, 4);
+    if (S.heli.active) {
+      mctx.strokeStyle = '#ff2e4d';
+      mctx.beginPath();
+      mctx.arc(S.heli.x * sx, S.heli.y * sy, 5, 0, Math.PI * 2);
+      mctx.stroke();
     }
-    // The player (white arrow).
+    // Player arrow.
     const p = S.player;
-    mm.save();
-    mm.translate(p.x * sx, p.y * sy);
-    mm.rotate(p.angle);
-    mm.fillStyle = '#ffffff';
-    mm.beginPath();
-    mm.moveTo(6, 0);
-    mm.lineTo(-4, -4);
-    mm.lineTo(-4, 4);
-    mm.closePath();
-    mm.fill();
-    mm.restore();
+    mctx.save();
+    mctx.translate(p.x * sx, p.y * sy);
+    mctx.rotate(p.angle);
+    mctx.fillStyle = '#ffffff';
+    mctx.strokeStyle = '#111';
+    mctx.beginPath();
+    mctx.moveTo(7, 0);
+    mctx.lineTo(-5, -4);
+    mctx.lineTo(-5, 4);
+    mctx.closePath();
+    mctx.fill();
+    mctx.stroke();
+    mctx.restore();
   }
 
-  function update() {
+  H.update = function update() {
     const p = S.player;
-    cashEl.textContent = Math.floor(p.cash).toLocaleString('en-US');
-    pkgEl.textContent = S.stats.packagesFound;
-    wantedEl.innerHTML = Array.from({ length: 5 }, (_, i) =>
-      `<span class="star ${i < S.wanted.level ? 'lit' : ''}">★</span>`).join('');
+    H.minimapTick += 1;
+    if (H.minimapTick % 2 === 0) drawMinimap();
+    // Wanted stars.
+    const stars = el('wanted');
+    if (stars) {
+      let html = '';
+      for (let i = 0; i < 5; i++) html += `<span class="star${i < S.wanted.level ? ' on' : ''}">★</span>`;
+      stars.innerHTML = html;
+    }
+    setText('cash', fmtCash(p.cash));
+    const hf = el('health-fill');
+    if (hf) hf.style.width = Math.max(0, p.health) + '%';
+    const af = el('armor-fill');
+    if (af) af.style.width = Math.max(0, p.armor) + '%';
+    const nf = el('nitro-fill');
+    if (nf) nf.style.width = (p.car ? p.car.nitro : 0) + '%';
+    setText('speed-num', p.car ? String(Math.round(Math.abs(p.car.speed) * 0.9)) : '0');
+    const w = WEAPONS[p.weapon];
+    const slot = p.weapons[p.weapon];
+    setText('weapon-name', w ? w.name : '');
+    setText('weapon-ammo', slot ? `${slot.inMag} / ${slot.reserve === Infinity ? '∞' : slot.reserve}` : '');
+    // Weapon slots.
+    for (const key of ['pistol', 'smg', 'shotgun']) {
+      const n = el('slot-' + key);
+      if (!n) continue;
+      n.classList.toggle('owned', !!p.weapons[key].owned);
+      n.classList.toggle('active', p.weapon === key);
+    }
+    setText('radio-name', RADIO[S.radio.station].name);
+    setText('district-name', districtNameAt(p.x, p.y));
+    setText('clock', new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+    // Mission panel.
     if (S.mission.active) {
-      const def = MISSIONS[S.mission.index];
-      missionTitle.textContent = `${def.title} — $${def.reward.toLocaleString('en-US')}`;
-      missionText.textContent = S.mission.text;
-    } else if (S.stats.missionsDone >= MISSIONS.length) {
-      missionTitle.textContent = 'VERDE BAY — COMPLETE';
-      missionText.textContent = 'Every mission done. The city is yours.';
+      setText('mission-title', `${S.mission.def.title} — ${fmtCash(S.mission.def.reward)}`);
+      setText('mission-text', missionObjective(S));
+    } else if (S.mission.index >= MISSIONS.length) {
+      setText('mission-title', 'Story complete');
+      setText('mission-text', 'Free roam — find all 10 hidden packages.');
     } else {
-      missionTitle.textContent = 'VERDE BAY';
-      missionText.textContent = S.stats.missionsDone === 0
-        ? 'Steal a car — mission 1 starts at Sunset Garage'
-        : `Next: ${MISSIONS[S.stats.missionsDone].title}`;
+      setText('mission-title', MISSIONS[S.mission.index].title);
+      setText('mission-text', 'Press M to start — ' + fmtCash(MISSIONS[S.mission.index].reward));
     }
-    const nitro = p.car ? Math.round((p.car.nitro / p.car.nitroMax) * 100) : 100;
-    nitroFill.style.width = `${nitro}%`;
-    speedEl.textContent = Math.round(Math.abs(p.speed || 0) * 0.22);
-    drawMinimap();
-    if (S.flags.busted) {
-      S.flags.busted = false;
-      bustedOverlay.classList.remove('hidden');
+    // Prompt line.
+    let prompt = '';
+    if (S.flags.menu) prompt = '';
+    else if (p.onFoot && S.near.car) prompt = 'Press F to steal the ' + (S.near.car.type || 'car');
+    else if (!p.onFoot) prompt = 'F — get out   •   Shift — nitro   •   C — radio   •   1/2/3 — weapons';
+    else if (S.near.shop) prompt = 'Press E — Verde Arms (buy weapons & ammo)';
+    else if (S.near.safehouse) prompt = 'Press E — Safehouse (save + heal)';
+    else prompt = 'WASD — move/drive   •   F — enter car   •   M — mission   •   Click — shoot';
+    setText('prompt', prompt);
+    // Toast + banner timers.
+    if (H.toastT > 0) {
+      H.toastT -= 1 / 60;
+      if (H.toastT <= 0) setVisible('toast', false);
     }
-    if (S.flags.wasted) {
-      S.flags.wasted = false;
-      wastedOverlay.classList.remove('hidden');
+    if (H.bannerT > 0) {
+      H.bannerT -= 1 / 60;
+      if (H.bannerT <= 0) setVisible('banner', false);
     }
-  }
-
-  return {
-    update,
-    banner,
-    showStart() { startOverlay.classList.remove('hidden'); },
-    hideStart() { startOverlay.classList.add('hidden'); },
-    hideBusted() { bustedOverlay.classList.add('hidden'); },
-    hideWasted() { wastedOverlay.classList.add('hidden'); },
   };
+
+  H.toast = function toast(text) {
+    setText('toast-text', text);
+    setVisible('toast', true);
+    H.toastT = 3;
+  };
+
+  H.banner = function banner(title, sub) {
+    setText('banner-title', title);
+    setText('banner-sub', sub || '');
+    setVisible('banner', true);
+    H.bannerT = 4;
+  };
+
+  H.showMenu = function showMenu(on) {
+    setVisible('menu', on);
+    setVisible('hud', !on);
+  };
+
+  H.showPaused = function showPaused(on) {
+    setVisible('pause-panel', on);
+  };
+
+  H.showBusted = function showBusted(on) {
+    setVisible('busted-panel', on);
+  };
+
+  H.showWasted = function showWasted(on) {
+    setVisible('wasted-panel', on);
+  };
+
+  H.showShop = function showShop(on) {
+    setVisible('shop-panel', on);
+    if (on) H.refreshShop();
+  };
+
+  H.showSafehouse = function showSafehouse(on) {
+    setVisible('safehouse-panel', on);
+  };
+
+  H.refreshShop = function refreshShop() {
+    const p = S.player;
+    const list = el('shop-items');
+    if (!list) return;
+    const items = [
+      { key: 'smg', label: 'VK-9 SMG — $1,500', can: !p.weapons.smg.owned, price: 1500 },
+      { key: 'shotgun', label: 'M12 Scattergun — $2,500', can: !p.weapons.shotgun.owned, price: 2500 },
+      { key: 'ammoPistol', label: 'Pistol ammo (48) — $120', can: true, price: 120 },
+      { key: 'ammoSmg', label: 'SMG ammo (120) — $300', can: p.weapons.smg.owned, price: 300 },
+      { key: 'ammoShotgun', label: 'Shells (24) — $240', can: p.weapons.shotgun.owned, price: 240 },
+      { key: 'armor', label: 'Body armor (50) — $400', can: p.armor < 50, price: 400 },
+      { key: 'health', label: 'First aid (full health) — $250', can: p.health < 100, price: 250 },
+    ];
+    list.innerHTML = '';
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.className = 'shop-item';
+      b.textContent = it.label + (it.can ? '' : ' — owned');
+      b.disabled = !it.can || p.cash < it.price;
+      b.addEventListener('click', () => cb.onBuy(it.key, it.price));
+      list.appendChild(b);
+    }
+    setText('shop-cash', fmtCash(p.cash));
+  };
+
+  // Wire the static buttons once.
+  const wire = (id, fn) => {
+    const n = el(id);
+    if (n) n.addEventListener('click', fn);
+  };
+  wire('btn-start', () => cb.onStart(false));
+  wire('btn-continue', () => cb.onStart(true));
+  wire('btn-resume', () => cb.onResume());
+  wire('btn-restart', () => cb.onRestart());
+  wire('btn-shop-close', () => cb.onClosePanels());
+  wire('btn-safehouse-close', () => cb.onClosePanels());
+  wire('btn-safehouse-save', () => cb.onSave());
+  wire('btn-busted-ok', () => cb.onClosePanels());
+  wire('btn-wasted-ok', () => cb.onClosePanels());
+
+  return H;
 }
