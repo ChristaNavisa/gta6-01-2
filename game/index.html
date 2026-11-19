@@ -1,98 +1,53 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VERDE BAY 3D v7 — Make GTA 6</title>
 <link rel="icon" href="data:,">
+<title>VERDE BAY 3D — v8</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<canvas id="c3d"></canvas>
+<canvas id="game" width="1280" height="800"></canvas>
 
-<div id="hud" class="hidden">
-  <div id="top-left">
-    <div id="wanted"></div>
-    <div id="cash">$0</div>
-    <div id="district-line"><span id="district-name">Verde Bay</span> · <span id="clock">18:42</span></div>
+<div id="hud">
+  <div id="hud-top-left">
+    <div id="hud-cash">$0</div>
+    <div id="hud-health">HP 100</div>
+    <div id="hud-armor"></div>
   </div>
-  <div id="top-right">
-    <canvas id="minimap" width="220" height="150"></canvas>
-    <div id="radio-line">♪ <span id="radio-name">VERDE FM</span></div>
+  <div id="hud-top-right">
+    <div id="hud-stars">☆☆☆☆☆</div>
+    <div id="hud-heli"></div>
+    <div id="hud-district">Downtown</div>
+    <div id="hud-clock">08:24 ☀️ DAY</div>
   </div>
-  <div id="bottom-left">
-    <div class="bar"><div id="health-fill"></div><span>HEALTH</span></div>
-    <div class="bar armor"><div id="armor-fill"></div><span>ARMOR</span></div>
-    <div id="weapons">
-      <div class="slot" id="slot-pistol"><b>1</b> P9 Pistol</div>
-      <div class="slot" id="slot-smg"><b>2</b> VK-9 SMG</div>
-      <div class="slot" id="slot-shotgun"><b>3</b> M12 Scattergun</div>
-    </div>
-    <div id="weapon-line"><span id="weapon-name">P9 Pistol</span> · <span id="weapon-ammo">12 / 96</span></div>
-  </div>
-  <div id="bottom-right">
-    <div id="speed"><span id="speed-num">0</span><small>MPH</small></div>
-    <div class="bar nitro"><div id="nitro-fill"></div><span>NITRO — SHIFT</span></div>
-  </div>
-  <div id="mission-panel">
-    <div id="mission-title">First Wheels</div>
-    <div id="mission-text">Press M to start</div>
-  </div>
-  <div id="prompt"></div>
-  <div id="toast" class="hidden"><span id="toast-text"></span></div>
-  <div id="banner" class="hidden"><div id="banner-title"></div><div id="banner-sub"></div></div>
+  <div id="hud-objective"></div>
+  <div id="hud-weapons"></div>
+  <div id="hud-radio"></div>
+  <div id="hud-prompt"></div>
+  <div id="hud-fanfare"></div>
+  <canvas id="minimap" width="220" height="140"></canvas>
+</div>
+
+<div id="shop">
+  <h2>VERDE ARMS</h2>
+  <div id="shop-list"></div>
+  <button id="shop-close">CLOSE (E)</button>
 </div>
 
 <div id="menu">
-  <div class="menu-inner">
-    <div class="menu-kicker">MAKE GTA 6 · AN OPEN-WORLD CRIME GAME</div>
-    <h1>VERDE<br>BAY<span> 3D</span></h1>
-    <p id="menu-sub">Ten missions. $31,000 of story cash. One island city that never sleeps.</p>
-    <p class="menu-story">Rosa needs wheels, Marco needs a crew, and the Verde Bay police need a reason to chase you. Steal cars, run the Strip, dodge the helicopter — and crack the vault under Verde National Bank.</p>
-    <div class="menu-buttons">
-      <button id="btn-start">▶ &nbsp;START STORY</button>
-      <button id="btn-continue">CONTINUE SAVE</button>
-    </div>
-    <div class="menu-controls">
-      <div><b>WASD</b> move / drive</div><div><b>F</b> enter &amp; steal cars</div>
-      <div><b>Mouse</b> aim · <b>Click</b> shoot</div><div><b>Shift</b> nitro / sprint</div>
-      <div><b>M</b> start mission</div><div><b>E</b> shop / safehouse</div>
-      <div><b>1 2 3</b> weapons</div><div><b>R</b> reload · <b>C</b> radio</div>
-    </div>
-    <p class="menu-foot">v7 — 10 story missions · police helicopter &amp; roadblocks · shops &amp; safehouse · 3 weapons · radio · hidden packages</p>
+  <h1>VERDE BAY 3D</h1>
+  <div class="menu-sub">Twelve missions. $48,000 of story cash.</div>
+  <div class="menu-sub">An open-world crime game — drive, fight, escape the law.</div>
+  <div class="menu-controls">
+    <div>WASD — drive / walk &nbsp;·&nbsp; Shift — nitro / run</div>
+    <div>Mouse — aim &nbsp;·&nbsp; Click / F — shoot &nbsp;·&nbsp; R — reload</div>
+    <div>1 / 2 / 3 — Pistol / SMG / Scattergun &nbsp;·&nbsp; C — radio</div>
+    <div>E — enter car / shop / safehouse &nbsp;·&nbsp; M — next mission &nbsp;·&nbsp; Esc — pause</div>
   </div>
-</div>
-
-<div id="shop-panel" class="panel hidden">
-  <h2>VERDE ARMS</h2>
-  <p class="panel-sub">Cash: <span id="shop-cash">$0</span></p>
-  <div id="shop-items"></div>
-  <button id="btn-shop-close">Close (E)</button>
-</div>
-
-<div id="safehouse-panel" class="panel hidden">
-  <h2>SAFEHOUSE</h2>
-  <p class="panel-sub">Your garage on Palms Residential. Save progress, heal up, lay low.</p>
-  <button id="btn-safehouse-save">💾 &nbsp;Save progress &amp; heal</button>
-  <button id="btn-safehouse-close">Close (E)</button>
-</div>
-
-<div id="pause-panel" class="panel hidden">
-  <h2>PAUSED</h2>
-  <button id="btn-resume">Resume</button>
-  <button id="btn-restart">Restart game</button>
-</div>
-
-<div id="busted-panel" class="panel hidden">
-  <h2>BUSTED</h2>
-  <p class="panel-sub">The Verde Bay PD caught up with you. $150 fine — back to the station.</p>
-  <button id="btn-busted-ok">Walk free</button>
-</div>
-
-<div id="wasted-panel" class="panel hidden">
-  <h2>WASTED</h2>
-  <p class="panel-sub">You wake up at Verde General, $200 lighter. The city is still yours.</p>
-  <button id="btn-wasted-ok">Get up</button>
+  <div class="menu-go">Press ENTER to start</div>
+  <div class="menu-foot">Verde Arms sells the VK-9 SMG ($1,500) and M12 Scattergun ($2,500). The Safehouse Garage saves your game and heals you. At 5 stars the military joins the chase.</div>
 </div>
 
 <script src="vendor/three.min.js"></script>

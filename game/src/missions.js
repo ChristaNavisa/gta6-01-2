@@ -1,222 +1,226 @@
-// VERDE BAY 3D v7 — the story: 10 missions, $31,000 of story cash.
-// Pure logic over the game state S: no DOM, no THREE, safe to import from Node.
-// Stage types: goto, driveTo, pickup, deliver, steal, eliminate, grab, escape, escapeArea.
-
-import { dist } from './util.js';
-import { CAR_TYPES } from './config.js';
+// VERDE BAY 3D v8 — 12 story missions, $48,000 of story cash, plus the crime
+// helper the sim uses (kept here so sim.js can import it with no cycle).
+import { WANTED_HEAT } from './config.js';
+import { dist2 } from './util.js';
+import { makeCar } from './sim.js';
 
 export const MISSIONS = [
   {
-    id: 'first-wheels', title: 'First Wheels', giver: 'Rosa', reward: 500,
-    brief: 'Rosa needs wheels. Lift the red sports car from Verde Motors and bring it to the garage.',
+    id: 'first-wheels', title: 'First Wheels', reward: 500,
+    briefing: 'Your cousin left a ride at the Verde Garage. Pick it up and take it for a spin to the stadium.',
     stages: [
-      { type: 'goto', target: 'dealership', text: 'Go to Verde Motors' },
-      { type: 'steal', target: 'garage', spawn: 'dealership', carType: 'sport', text: 'Steal the sports car, take it to the garage' },
+      { type: 'goto', target: 'garage', text: 'Get to the Verde Garage' },
+      { type: 'driveTo', target: 'stadium', text: 'Drive to Verde Stadium' },
     ],
   },
   {
-    id: 'taxi-takedown', title: 'Taxi Takedown', giver: 'Rosa', reward: 800,
-    brief: 'A rival crew is shaking down Rosa Diner. Clear them out, then get clear of the area.',
+    id: 'taxi-takedown', title: 'Taxi Takedown', reward: 800,
+    briefing: 'A rival crew is running cabs on your turf. Jack their taxi and bring it home.',
     stages: [
-      { type: 'goto', target: 'diner', text: 'Go to Rosa Diner' },
-      { type: 'eliminate', target: 'diner', count: 5, text: 'Take out the rival crew' },
-      { type: 'escapeArea', target: 'diner', text: 'Get clear of the diner area' },
+      { type: 'goto', target: 'taxi', text: 'Get to the Taxi Rank' },
+      { type: 'steal', target: 'taxi', text: 'Steal the rival taxi, then lose it at the garage' },
     ],
   },
   {
-    id: 'dockside-deal', title: 'Dockside Deal', giver: 'Marco', reward: 1000,
-    brief: 'Marco has a package waiting on Sunset Pier. Drive out, grab it, run it to the Harbor Warehouse.',
+    id: 'dockside-deal', title: 'Dockside Deal', reward: 1000,
+    briefing: 'A buyer is waiting at the docks. Drive there, grab the package, deliver it to the warehouse.',
     stages: [
-      { type: 'driveTo', target: 'pier', text: 'Drive to Sunset Pier' },
-      { type: 'pickup', target: 'pier', text: 'Pick up the package' },
-      { type: 'deliver', target: 'warehouse', text: 'Deliver it to the Harbor Warehouse' },
+      { type: 'driveTo', target: 'dock', text: 'Drive to the Dockside meet' },
+      { type: 'pickup', target: 'dock', text: 'Grab the package' },
+      { type: 'deliver', target: 'warehouse', text: 'Deliver it to the Old Warehouse' },
     ],
   },
   {
-    id: 'big-score', title: 'The Big Score', giver: 'Marco', reward: 1400,
-    brief: 'Verde National Bank keeps its afternoon take in the back room. Grab it and lose the heat at the marina.',
+    id: 'big-score', title: 'The Big Score', reward: 1400,
+    briefing: 'The Verde Bank is soft at lunch. Grab the cash and lose the heat at the Marina.',
     stages: [
-      { type: 'goto', target: 'bank', text: 'Go to Verde National Bank' },
-      { type: 'grab', target: 'bank', wanted: 2, text: 'Grab the afternoon take' },
-      { type: 'escape', target: 'marina', text: 'Lose the cops at the marina' },
+      { type: 'goto', target: 'bank', text: 'Case the Verde Bank' },
+      { type: 'grab', target: 'bank', text: 'Grab the cash', wanted: 2 },
+      { type: 'escape', target: 'marina', text: 'Escape to the Marina' },
     ],
   },
   {
-    id: 'cannery-run', title: 'Cannery Run', giver: 'Rosa', reward: 1800,
-    brief: 'The Old Cannery hides a crate Rosa paid for. Drive over, pick it up, drop it at the stadium.',
+    id: 'cannery-run', title: 'Cannery Run', reward: 1800,
+    briefing: 'The Old Cannery has crates that need moving. Load up and drop them at Port Verde.',
     stages: [
       { type: 'driveTo', target: 'cannery', text: 'Drive to the Old Cannery' },
-      { type: 'pickup', target: 'cannery', text: 'Pick up the crate' },
-      { type: 'deliver', target: 'stadium', text: 'Deliver it to Verde Stadium' },
+      { type: 'pickup', target: 'cannery', text: 'Load the crates' },
+      { type: 'deliver', target: 'port', text: 'Drop them at Port Verde' },
     ],
   },
   {
-    id: 'harbor-heist', title: 'Harbor Heist', giver: 'Marco', reward: 3500,
-    brief: 'A shipment lands at the Harbor Warehouse tonight. Take it while the dock crew is on break.',
+    id: 'harbor-heist', title: 'Harbor Heist', reward: 3500,
+    briefing: 'A shipment is sitting in the Old Warehouse. Take it — the cops will notice.',
     stages: [
-      { type: 'goto', target: 'warehouse', text: 'Go to the Harbor Warehouse' },
-      { type: 'grab', target: 'warehouse', wanted: 2, text: 'Grab the shipment' },
-      { type: 'escape', target: 'marina', text: 'Lose the cops at the marina' },
+      { type: 'goto', target: 'warehouse', text: 'Get to the Old Warehouse' },
+      { type: 'grab', target: 'warehouse', text: 'Grab the shipment', wanted: 2 },
+      { type: 'escape', target: 'marina', text: 'Escape to the Marina' },
     ],
   },
   {
-    id: 'island-run', title: 'Island Run', giver: 'Rosa', reward: 4000,
-    brief: 'A light-keeper on Isla Verde is holding a case for Rosa. Cross the bridge, get it, bring it to the ferry.',
+    id: 'island-run', title: 'Island Run', reward: 4000,
+    briefing: 'Run cargo across the channel: ferry terminal to the Isla Verde Dock.',
     stages: [
-      { type: 'driveTo', target: 'lighthouse', text: 'Drive to the Isla Lighthouse' },
-      { type: 'pickup', target: 'lighthouse', text: 'Pick up the case' },
-      { type: 'deliver', target: 'ferry', text: 'Deliver it to the Ferry Terminal' },
+      { type: 'driveTo', target: 'ferry', text: 'Drive to the Ferry Terminal' },
+      { type: 'pickup', target: 'ferry', text: 'Pick up the cargo' },
+      { type: 'deliver', target: 'boat', text: 'Deliver it to the Isla Verde Dock' },
     ],
   },
   {
-    id: 'last-ferry', title: 'Last Ferry', giver: 'Marco', reward: 5000,
-    brief: 'The last ferry carries a lockbox for Marco. Take it from the terminal and vanish at the marina.',
+    id: 'last-ferry', title: 'The Last Ferry', reward: 5000,
+    briefing: 'The last ferry leaves at midnight with a briefcase on it. Grab it and run.',
     stages: [
-      { type: 'goto', target: 'ferry', text: 'Go to the Ferry Terminal' },
-      { type: 'grab', target: 'ferry', wanted: 2, text: 'Grab the lockbox' },
-      { type: 'escape', target: 'marina', text: 'Lose the cops at the marina' },
+      { type: 'goto', target: 'ferry', text: 'Catch the last ferry' },
+      { type: 'grab', target: 'ferry', text: 'Grab the briefcase', wanted: 2 },
+      { type: 'escape', target: 'marina', text: 'Escape to the Marina' },
     ],
   },
   {
-    id: 'neon-grand-prix', title: 'Neon Grand Prix', giver: 'Lena', reward: 6000,
-    brief: 'Lena bets the Strip has no faster driver than you. Three checkpoints, one night: casino, hotel, pier.',
+    id: 'neon-grand-prix', title: 'Neon Grand Prix', reward: 6000,
+    briefing: 'An illegal street race through The Strip. Beat the rival racers to the casino.',
     stages: [
-      { type: 'driveTo', target: 'casino', text: 'Checkpoint 1: Neon Casino' },
-      { type: 'driveTo', target: 'hotel', text: 'Checkpoint 2: Palms Hotel' },
-      { type: 'driveTo', target: 'pier', text: 'Checkpoint 3: Sunset Pier' },
+      { type: 'driveTo', target: 'strip', text: 'Race to The Strip' },
+      { type: 'eliminate', target: 'strip', text: 'Clear the rival racers' },
+      { type: 'deliver', target: 'casino', text: 'Finish at the Neon Crown Casino' },
     ],
   },
   {
-    id: 'the-vault', title: 'The Vault', giver: 'Marco', reward: 7000,
-    brief: 'The vault under Verde National Bank. The crew is waiting inside. Take them down, crack it, get out.',
+    id: 'the-vault', title: 'The Vault', reward: 7000,
+    briefing: 'The Verde Bank vault. Guards, then the grab — three stars the moment you touch it.',
     stages: [
-      { type: 'goto', target: 'bank', text: 'Go to Verde National Bank' },
-      { type: 'eliminate', target: 'bank', count: 6, text: 'Take out the vault crew' },
-      { type: 'grab', target: 'bank', wanted: 3, text: 'Crack the vault' },
-      { type: 'escape', target: 'stadium', text: 'Lose the cops at the stadium' },
+      { type: 'goto', target: 'bank', text: 'Get to the Verde Bank' },
+      { type: 'eliminate', target: 'bank', text: 'Take out the guards' },
+      { type: 'grab', target: 'bank', text: 'Crack the vault', wanted: 3 },
+      { type: 'escape', target: 'stadium', text: 'Escape to the Stadium' },
+    ],
+  },
+  {
+    id: 'neon-crown', title: 'Neon Crown', reward: 8000, night: true,
+    briefing: 'Midnight on The Strip: a race and a shootout, finishing at the Neon Crown Casino.',
+    stages: [
+      { type: 'driveTo', target: 'strip', text: 'Race through The Strip at night' },
+      { type: 'eliminate', target: 'strip', text: 'Win the shootout on The Strip' },
+      { type: 'deliver', target: 'casino', text: 'Finish at the Neon Crown Casino' },
+    ],
+  },
+  {
+    id: 'king-of-verde', title: 'King of Verde', reward: 9000,
+    briefing: 'The final heist: steal the casino vault, then escape by boat to Isla Verde.',
+    stages: [
+      { type: 'goto', target: 'casino', text: 'Get inside the Neon Crown Casino' },
+      { type: 'grab', target: 'casino', text: 'Steal the casino vault', wanted: 4 },
+      { type: 'escape', target: 'boat', text: 'Escape by boat to Isla Verde' },
     ],
   },
 ];
 
+export const TOTAL_STORY_CASH = MISSIONS.reduce((a, m) => a + m.reward, 0);
+
+// Raise the wanted level to at least `level` (heat jumps to that level's floor).
 export function commitCrime(S, level) {
-  S.wanted.level = Math.max(S.wanted.level, Math.min(level, 5));
-  S.wanted.heat = 100;
-  S.wanted.calmT = 0;
+  if (level <= S.wanted.level) return;
+  S.wanted.level = level;
+  S.wanted.heat = WANTED_HEAT[level] + 1;
+  S.wanted.quiet = 0;
+  S.wanted.maxLevel = Math.max(S.wanted.maxLevel || 0, level);
 }
 
 export function startMission(S, index) {
   const def = MISSIONS[index];
   if (!def) return false;
-  S.mission = { active: true, index, stage: 0, data: {}, def };
+  S.mission = { active: true, index, stage: 0, data: {}, def, failed: false };
+  if (def.night) S.dayTime = 0.88; // midnight on The Strip
   beginStage(S);
   return true;
 }
 
-export function currentStage(S) {
-  if (!S.mission.active) return null;
-  return S.mission.def.stages[S.mission.stage] || null;
-}
-
-export function missionObjective(S) {
-  if (!S.mission.active) {
-    if (S.mission.index >= MISSIONS.length) return 'Story complete — free roam. Find all 10 hidden packages.';
-    const next = MISSIONS[S.mission.index];
-    return next ? `Next: ${next.title} — press M to start` : 'Free roam';
+function spawnGang(S, place, n) {
+  const gang = [];
+  for (let i = 0; i < n; i++) {
+    gang.push({
+      x: place.x + (i - n / 2) * 40, y: place.y + ((i % 2) * 60 - 30),
+      hp: 100, angle: 0, shootTimer: 1 + i * 0.4, dead: false,
+    });
   }
-  const stage = currentStage(S);
-  return stage ? stage.text : '';
+  return gang;
 }
 
 function beginStage(S) {
-  const stage = currentStage(S);
+  const def = S.mission.def;
+  const stage = def.stages[S.mission.stage];
   if (!stage) return;
-  const place = S.city.places[stage.target];
-  S.mission.data = { ...S.mission.data, grabT: 0 };
+  S.mission.data = {};
+  if (stage.type === 'grab' && stage.wanted) commitCrime(S, stage.wanted);
+  if (stage.type === 'eliminate') {
+    const place = S.city.places[stage.target];
+    S.mission.data.gang = spawnGang(S, place, 3 + (S.mission.index >= 8 ? 2 : 0));
+  }
   if (stage.type === 'steal') {
-    const spawn = S.city.places[stage.spawn || stage.target];
-    const type = stage.carType || 'sport';
-    const car = S.spawnCar(type, spawn.x + 40, spawn.y + 10, 0, CAR_TYPES[type].color, 'mission');
+    const place = S.city.places[stage.target];
+    const car = makeCar('taxi', place.x + 30, place.y, 0, '#f4b400', 'target');
     S.cars.push(car);
     S.mission.data.targetCar = car;
-  } else if (stage.type === 'eliminate') {
-    const gang = [];
-    const n = stage.count || 5;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      gang.push({
-        x: place.x + Math.cos(a) * 55,
-        y: place.y + Math.sin(a) * 55,
-        hp: 100, maxHp: 100, angle: a, speed: 95,
-        shootT: 0.6 + i * 0.25, state: 'combat', kind: 'gang',
-      });
-    }
-    S.mission.data.gang = gang;
-  } else if (stage.type === 'grab') {
-    commitCrime(S, stage.wanted || 2);
   }
 }
 
-function advanceStage(S) {
-  S.mission.stage += 1;
-  if (S.mission.stage >= S.mission.def.stages.length) {
-    completeMission(S);
-  } else {
-    beginStage(S);
-  }
-}
-
-function completeMission(S) {
+function stageDone(S) {
   const def = S.mission.def;
-  S.stats.missionsDone += 1;
-  S.player.cash += def.reward;
-  S.mission.index += 1;
-  S.mission.active = false;
-  S.mission.stage = 0;
-  S.mission.data = {};
-  S.events.push({ type: 'missionComplete', title: def.title, reward: def.reward, t: S.time });
+  const stage = def.stages[S.mission.stage];
+  const p = S.player;
+  const place = stage.target ? S.city.places[stage.target] : null;
+  switch (stage.type) {
+    case 'goto':
+    case 'driveTo':
+    case 'pickup':
+    case 'deliver':
+    case 'grab':
+    case 'escape':
+      return place && dist2(p.x, p.y, place.x, place.y) < 75;
+    case 'escapeArea':
+      return place && dist2(p.x, p.y, place.x, place.y) > 400;
+    case 'steal': {
+      const car = S.mission.data.targetCar;
+      const g = S.city.places.garage;
+      return !!car && p.car === car && dist2(p.x, p.y, g.x, g.y) < 75;
+    }
+    case 'eliminate': {
+      const gang = S.mission.data.gang || [];
+      return gang.length > 0 && gang.every((g) => g.hp <= 0);
+    }
+    default:
+      return false;
+  }
 }
 
 export function updateMission(S, dt) {
   if (!S.mission.active) return;
-  const stage = currentStage(S);
-  if (!stage) return;
-  const p = S.player;
-  const place = S.city.places[stage.target];
-  const d = place ? dist(p.x, p.y, place.x, place.y) : 99999;
-  switch (stage.type) {
-    case 'goto':
-    case 'deliver':
-    case 'pickup':
-      if (d < 70) advanceStage(S);
-      break;
-    case 'driveTo':
-      if (p.car && d < 70) advanceStage(S);
-      break;
-    case 'steal': {
-      const car = S.mission.data.targetCar;
-      if (car && p.car === car && d < 70) advanceStage(S);
-      break;
+  if (stageDone(S)) {
+    S.mission.stage += 1;
+    if (S.mission.stage >= S.mission.def.stages.length) {
+      // Mission complete: pay out, advance, fanfare.
+      S.player.cash += S.mission.def.reward;
+      S.stats.missionsDone += 1;
+      S.fanfare = { text: `MISSION COMPLETE — ${S.mission.def.title}  +$${S.mission.def.reward}`, t: 0 };
+      S.mission.active = false;
+      S.mission.index += 1;
+      S.mission.stage = 0;
+      S.autosave = true;
+      return;
     }
-    case 'eliminate': {
-      const gang = S.mission.data.gang || [];
-      if (gang.length > 0 && gang.every((g) => g.hp <= 0)) advanceStage(S);
-      break;
-    }
-    case 'grab':
-      if (d < 80) {
-        S.mission.data.grabT = (S.mission.data.grabT || 0) + dt;
-        if (S.mission.data.grabT >= 1.2) advanceStage(S);
-      } else {
-        S.mission.data.grabT = Math.max(0, (S.mission.data.grabT || 0) - dt);
-      }
-      break;
-    case 'escape':
-      if (S.wanted.level === 0 && d < 80) advanceStage(S);
-      break;
-    case 'escapeArea':
-      if (d > 300) advanceStage(S);
-      break;
-    default:
-      break;
+    beginStage(S);
   }
+}
+
+export function failMission(S, reason) {
+  if (!S.mission.active) return;
+  S.mission.active = false;
+  S.mission.failed = true;
+  S.mission.failReason = reason;
+  S.fanfare = { text: `MISSION FAILED — ${reason}`, t: 0 };
+  S.wanted.level = 0;
+  S.wanted.heat = 0;
+  const hospital = S.city.places.hospital;
+  S.player.x = hospital.x; S.player.y = hospital.y;
+  S.player.health = 50;
+  if (S.player.car) { S.player.car = null; S.player.onFoot = true; }
 }

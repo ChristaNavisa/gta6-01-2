@@ -1,112 +1,51 @@
-// VERDE BAY 3D v7 — every tunable number in one place.
-// Map size, districts, vehicles, weapons, radio, prices, physics.
+// Tunables for VERDE BAY 3D v8: world, districts, vehicles, weapons, wanted.
+export const WORLD = { w: 3400, h: 2100 };
 
-export const MAP = { w: 3400, h: 2200, minX: 40, minY: 40, maxX: 3360, maxY: 2080 };
-
-// District rectangles: { x0, y0, x1, y1, name }.
-// districtAt() checks them in order; the water channel is checked first.
-export const DISTRICTS = [
-  { id: 'water', x0: 2620, y0: 0, x1: 2900, y1: 2200, name: 'Verde Channel' },
-  { id: 'isla', x0: 2900, y0: 700, x1: 3360, y1: 1500, name: 'Isla Verde' },
-  { id: 'marina', x0: 1900, y0: 1750, x1: 2450, y1: 2050, name: 'Marina del Sol' },
-  { id: 'strip', x0: 1800, y0: 1300, x1: 2400, y1: 1750, name: 'The Strip' },
-  { id: 'beach', x0: 800, y0: 1400, x1: 1800, y1: 1900, name: 'Verde Beach' },
-  { id: 'industrial', x0: 1800, y0: 700, x1: 2600, y1: 1300, name: 'Industrial Yards' },
-  { id: 'downtown', x0: 700, y0: 550, x1: 1600, y1: 1100, name: 'Downtown' },
-  { id: 'oldtown', x0: 80, y0: 450, x1: 600, y1: 1000, name: 'Old Town' },
-  { id: 'residential', x0: 600, y0: 80, x1: 1700, y1: 520, name: 'Palms Residential' },
-];
-
-// Vertical avenues (x) and horizontal streets (y). Road half-width 18.
-export const ROADS_X = [300, 700, 1100, 1500, 1900, 2300, 3100];
-export const ROADS_Y = [300, 700, 1100, 1500, 1900];
-export const ROAD_HALF = 18;
-
-// Named places: the city the missions drive through. label is shown on the
-// minimap and by districtNameAt() when the player is close.
-export const PLACES = {
-  garage: { x: 1050, y: 420, label: 'Safehouse Garage' },
-  marina: { x: 2150, y: 1830, label: 'Marina del Sol' },
-  stadium: { x: 950, y: 1300, label: 'Verde Stadium' },
-  warehouse: { x: 2100, y: 1000, label: 'Harbor Warehouse' },
-  ferry: { x: 2250, y: 1880, label: 'Ferry Terminal' },
-  bank: { x: 1150, y: 750, label: 'Verde National Bank' },
-  cannery: { x: 2000, y: 1130, label: 'Old Cannery' },
-  pier: { x: 1350, y: 1850, label: 'Sunset Pier' },
-  hotel: { x: 1250, y: 1600, label: 'Palms Hotel' },
-  casino: { x: 2150, y: 1500, label: 'Neon Casino' },
-  club: { x: 2050, y: 1600, label: 'Club Mirage' },
-  dealership: { x: 1500, y: 900, label: 'Verde Motors' },
-  diner: { x: 400, y: 800, label: 'Rosa Diner' },
-  park: { x: 850, y: 550, label: 'Palms Park' },
-  plaza: { x: 1150, y: 950, label: 'Liberty Plaza' },
-  lighthouse: { x: 3200, y: 1250, label: 'Isla Lighthouse' },
-  airstrip: { x: 3100, y: 950, label: 'Isla Airstrip' },
-  shop: { x: 1400, y: 700, label: 'Verde Arms' },
-  safehouse: { x: 1050, y: 420, label: 'Safehouse' },
-  hospital: { x: 1400, y: 1100, label: 'Verde General' },
-  station: { x: 700, y: 900, label: 'Police Station' },
+export const DISTRICTS = {
+  residential: { x0: 800, y0: 0, x1: 1400, y1: 600, name: 'Residential', ground: '#7a9a5b' },
+  downtown: { x0: 800, y0: 600, x1: 1400, y1: 1100, name: 'Downtown', ground: '#8a8f98' },
+  oldtown: { x0: 0, y0: 400, x1: 600, y1: 1000, name: 'Old Town', ground: '#9a7b5b' },
+  beach: { x0: 900, y0: 1500, x1: 1700, y1: 2000, name: 'Beachfront', ground: '#e8d29a' },
+  industrial: { x0: 1900, y0: 800, x1: 2500, y1: 1300, name: 'Industrial Zone', ground: '#6f6f6f' },
+  strip: { x0: 1900, y0: 1400, x1: 2400, y1: 1750, name: 'The Strip', ground: '#3d2b4d' },
+  marina: { x0: 1900, y0: 1750, x1: 2400, y1: 2050, name: 'Marina del Sol', ground: '#4a7a8a' },
+  isla: { x0: 2600, y0: 900, x1: 3350, y1: 1400, name: 'Isla Verde', ground: '#5b8a4a' },
+  water: { x0: 2600, y0: 0, x1: 2900, y1: 950, name: 'Verde Channel', ground: '#2a6a8a' },
 };
 
-// Vehicle types: top speed in world units per second.
 export const CAR_TYPES = {
-  sedan: { maxSpeed: 240, accel: 95, color: '#2e5fa3', label: 'Sedan' },
-  sport: { maxSpeed: 300, accel: 135, color: '#d7263d', label: 'Sports' },
-  taxi: { maxSpeed: 250, accel: 105, color: '#f4b400', label: 'Taxi' },
-  truck: { maxSpeed: 180, accel: 62, color: '#6c757d', label: 'Truck' },
-  van: { maxSpeed: 210, accel: 80, color: '#e9ecef', label: 'Van' },
-  cop: { maxSpeed: 272, accel: 122, color: '#212529', label: 'Police Cruiser' },
+  sedan: { maxSpeed: 150, accel: 130, label: 'Sedan', nitroMax: 100 },
+  sport: { maxSpeed: 195, accel: 165, label: 'Sports', nitroMax: 100 },
+  taxi: { maxSpeed: 150, accel: 130, label: 'Taxi', nitroMax: 100 },
+  truck: { maxSpeed: 110, accel: 90, label: 'Truck', nitroMax: 100 },
+  cop: { maxSpeed: 178, accel: 150, label: 'Police Cruiser', nitroMax: 0 },
+  jeep: { maxSpeed: 205, accel: 170, label: 'Military Jeep', nitroMax: 0 },
 };
 
-export const NITRO = { max: 100, boost: 1.55, drain: 42, regen: 9 };
+export const NITRO_MULT = 1.55;
+export const NITRO_DRAIN = 42; // per second while boosting
+export const NITRO_REGEN = 6; // per second while not boosting
 
-// Weapons: damage per hit, fire interval, magazine, range, price.
-export const WEAPONS = {
-  pistol: { name: 'P9 Pistol', damage: 34, rate: 0.28, mag: 12, range: 260, spread: 0.02, pellets: 1, price: 0 },
-  smg: { name: 'VK-9 SMG', damage: 22, rate: 0.09, mag: 30, range: 240, spread: 0.06, pellets: 1, price: 1500 },
-  shotgun: { name: 'M12 Scattergun', damage: 18, rate: 0.8, mag: 6, range: 180, spread: 0.14, pellets: 6, price: 2500 },
-};
+export const WEAPONS = [
+  { name: 'P9 Pistol', mag: 12, reserve: 60, damage: 34, rate: 0.22, spread: 0.05, range: 320, price: 0 },
+  { name: 'VK-9 SMG', mag: 30, reserve: 180, damage: 18, rate: 0.09, spread: 0.09, range: 280, price: 1500 },
+  { name: 'M12 Scattergun', mag: 6, reserve: 36, damage: 22, rate: 0.85, spread: 0.22, range: 170, price: 2500, pellets: 6 },
+];
 
 export const SHOP = {
-  ammoPistol: { label: 'Pistol ammo (48)', price: 120 },
-  ammoSmg: { label: 'SMG ammo (120)', price: 300 },
-  ammoShotgun: { label: 'Shells (24)', price: 240 },
-  armor: { label: 'Body armor (50)', price: 400 },
-  health: { label: 'First aid (full health)', price: 250 },
+  smg: { label: 'VK-9 SMG', price: 1500 },
+  scattergun: { label: 'M12 Scattergun', price: 2500 },
+  ammo: { label: 'Ammo refill (all weapons)', price: 400 },
+  armor: { label: 'Body armor (+50)', price: 600 },
+  medkit: { label: 'First aid (+50 HP)', price: 300 },
 };
 
-export const RADIO = [
-  { name: 'VERDE FM', desc: 'Sunset chill', hue: 210 },
-  { name: 'NEON NIGHTS', desc: 'Synthwave drive', hue: 300 },
-  { name: 'ISLA BEATS', desc: 'Island rhythm', hue: 30 },
-];
+export const WANTED_HEAT = [0, 10, 25, 45, 65, 85]; // heat needed for each level
+export const WANTED_DECAY = 2.2; // heat per second when quiet
+export const WANTED_QUIET_TIME = 5; // seconds without crime before decay starts
 
-export const WANTED = {
-  maxLevel: 5,
-  bustSeconds: 2.5,
-  bustFine: 150,
-  decayCalmSeconds: 10,
-  copCarCount: [0, 2, 3, 4, 5, 6],
-  footCopCount: [0, 0, 2, 3, 4, 5],
-};
+export const DAY_LENGTH = 240; // seconds per full day/night cycle
+export const PACKAGE_REWARD = 250;
+export const PACKAGE_COUNT = 10;
 
-export const PLAYER = {
-  walkSpeed: 150,
-  runSpeed: 215,
-  health: 100,
-  packageReward: 250,
-  packageCount: 10,
-  trafficCars: 22,
-  pedestrians: 36,
-  parkedCars: 14,
-};
-
-export const COLORS = {
-  sky: '#ffd9a0',
-  sun: '#ffdfb0',
-  sea: '#1e6f8e',
-  sand: '#e8d5a3',
-  grass: '#7da05c',
-  asphalt: '#3a3f46',
-  sidewalk: '#8a8f96',
-};
+export const RADIO_STATIONS = ['Verde FM', 'Neon Nights', 'Isla Beats'];

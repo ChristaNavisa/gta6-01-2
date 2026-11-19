@@ -1,64 +1,57 @@
-// VERDE BAY 3D v7 — screenshot modes: the game stages itself for its own photos.
-// ?shot=start shows the menu over the orbiting city; drive / chase / mission drop
-// the player straight into the action so the screenshots show the systems.
-
-import { startMission } from './missions.js';
-import { makeCar } from './sim.js';
+// Screenshot director for VERDE BAY 3D v8. Reads ?shot=start|drive|chase|mission
+// and stages a deterministic scene for the Playwright shots script, then sets
+// window.__ready once the first frames have rendered.
+import { createGame, startMission, commitCrime, makeCar } from './sim.js';
 
 export function setupShot(S, mode) {
+  S.shotMode = mode;
   const p = S.player;
   if (mode === 'start') {
     S.flags.menu = true;
     S.flags.started = false;
+    p.x = 1150; p.y = 850; p.angle = Math.PI / 4;
     return;
   }
   S.flags.menu = false;
   S.flags.started = true;
-
+  S.time = 1;
   if (mode === 'drive') {
-    S.shot = 'drive';
-    S.shotSpeed = 185;
-    const car = makeCar('sport', 2050, 1500, 0, '#d7263d', 'player');
+    const car = makeCar('sport', 1050, 750, 0, '#d7263d', 'player');
     S.cars.push(car);
-    p.car = car;
-    p.onFoot = false;
-    p.x = car.x;
-    p.y = car.y;
-    p.angle = 0;
-    car.speed = 185;
-    car.nitro = 80;
-  } else if (mode === 'chase') {
-    S.shot = 'chase';
-    S.shotSpeed = 205;
-    const car = makeCar('sport', 1500, 1500, 0, '#d7263d', 'player');
+    p.car = car; p.onFoot = false;
+    p.x = 1050; p.y = 750; p.angle = 0;
+    car.speed = 120;
+    return;
+  }
+  if (mode === 'chase') {
+    // Wanted 3 chase with the helicopter IN FRAME: heli ahead of the player,
+    // low orbit, searchlight on. The render frames the camera up toward it.
+    const car = makeCar('sport', 1050, 750, 0, '#d7263d', 'player');
     S.cars.push(car);
-    p.car = car;
-    p.onFoot = false;
-    p.x = car.x;
-    p.y = car.y;
-    p.angle = 0;
-    car.speed = 205;
+    p.car = car; p.onFoot = false;
+    p.x = 1050; p.y = 750; p.angle = 0;
     p.cash = 12450;
-    S.wanted.heat = 80;
-    S.wanted.level = 3;
-    S.wanted.calmT = 0;
-    // Two cruisers flanking the player, in frame for the photo.
-    for (const [dx, dy] of [[-10, 45], [60, -40]]) {
-      const cop = makeCar('cop', p.x + dx, p.y + dy, 0, '#212529', 'cop');
-      cop.speed = 190;
-      S.cops.push(cop);
-      S.cars.push(cop);
+    car.speed = 170;
+    commitCrime(S, 3);
+    // Park the helicopter ahead of the car, low and big in the frame.
+    if (S.heli) {
+      S.heli.angle = 0; // straight ahead on the +x axis from the player
+      S.heli.orbitR = 90;
+      S.heli.z = 30;
+      S.heli.x = p.x + 90;
+      S.heli.y = p.y + 10;
     }
-    // Helicopter ahead-right, low enough to be in frame.
-    S.heli.angle = -0.6;
-    S.heli.active = true;
-    // A roadblock waiting up the Strip.
-    S.roadblocks.push({ x: 1980, y: 1500, angle: Math.PI / 2, t: S.time });
-  } else if (mode === 'mission') {
-    startMission(S, 0);
-    p.x = 1465;
-    p.y = 905;
-    p.angle = Math.atan2(900 - 905, 1500 - 1465);
-    p.cash = 500;
+    return;
+  }
+  if (mode === 'mission') {
+    // Mission 11, Neon Crown, at night on The Strip: race + shootout.
+    const car = makeCar('sport', 2050, 1500, Math.PI / 2, '#d7263d', 'player');
+    S.cars.push(car);
+    p.car = car; p.onFoot = false;
+    p.x = 2050; p.y = 1500; p.angle = Math.PI / 2;
+    p.cash = 18200;
+    car.speed = 60;
+    startMission(S, 10);
+    return;
   }
 }

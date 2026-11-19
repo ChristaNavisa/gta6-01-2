@@ -1,31 +1,29 @@
-// VERDE BAY 3D v7 — local dev server: serves game/ on http://localhost:8080.
-// Node standard library only. Usage: node serve.ts
-
-import { createServer } from 'node:http';
+// VERDE BAY 3D v8 — tiny static server for local play. Serves game/ at
+// http://localhost:8080 (open index.html there). Standard library only.
+import http from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const root = join(here, 'game');
-const port = Number(process.env.PORT || 8080);
+const port = parseInt(process.env.PORT || '8080', 10);
 
-const MIME = {
+const MIME: Record<string, string> = {
   '.html': 'text/html',
   '.js': 'text/javascript',
   '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
 };
 
-const server = createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || '/').split('?')[0]);
   const file = join(root, url === '/' ? 'index.html' : url);
   if (!file.startsWith(root) || !existsSync(file) || statSync(file).isDirectory()) {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.writeHead(404);
     res.end('not found');
     return;
   }
@@ -34,5 +32,5 @@ const server = createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`VERDE BAY 3D v7 at http://localhost:${port}`);
+  console.log(`VERDE BAY 3D v8 at http://localhost:${port}`);
 });

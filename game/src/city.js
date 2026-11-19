@@ -1,215 +1,168 @@
-// VERDE BAY 3D v7 — the island city: districts, roads, buildings, palms, packages.
-// Pure data generation (seeded): no DOM, no THREE, safe to import from Node.
+// VERDE BAY 3D v8 — the island city: districts, buildings, palms, roads, places.
+// Pure data + seeded RNG: no DOM, no THREE, so the Node smoke test can import it.
+import { DISTRICTS, PACKAGE_COUNT } from './config.js';
+import { mulberry32, pick } from './util.js';
 
-import { mulberry32, pick, range, rangeInt, dist } from './util.js';
-import { MAP, DISTRICTS, ROADS_X, ROADS_Y, ROAD_HALF, PLACES, PLAYER } from './config.js';
+const ROAD_X = [150, 450, 750, 1050, 1350, 1650, 1950, 2250, 2550, 2850, 3150];
+const ROAD_Y = [150, 450, 750, 1050, 1350, 1650, 1950];
+const ROAD_HALF = 46;
 
-const BEACH_ROOFS = ['#f4a261', '#e9c46a', '#f7ede2', '#ee9b7a'];
-const BRICK_ROOFS = ['#b5523c', '#8c4a32', '#a85b3f', '#7a3b2e'];
-const CITY_ROOFS = ['#5a6b7a', '#7a8a99', '#4a5568', '#93a5b5', '#c9d4de'];
-const RESORT_ROOFS = ['#f4a261', '#e9c46a', '#ffffff', '#8ecae6'];
+export const PLACES = {
+  garage: { x: 1150, y: 850, name: 'Verde Garage' },
+  stadium: { x: 1000, y: 350, name: 'Verde Stadium' },
+  taxi: { x: 1200, y: 900, name: 'Taxi Rank' },
+  dock: { x: 2100, y: 1800, name: 'Dockside' },
+  warehouse: { x: 2200, y: 1000, name: 'Old Warehouse' },
+  ferry: { x: 2250, y: 1880, name: 'Ferry Terminal' },
+  bank: { x: 1050, y: 750, name: 'Verde Bank' },
+  marina: { x: 2150, y: 1830, name: 'Marina del Sol' },
+  casino: { x: 2100, y: 1550, name: 'Neon Crown Casino' },
+  strip: { x: 2150, y: 1500, name: 'The Strip' },
+  boat: { x: 3050, y: 1100, name: 'Isla Verde Dock' },
+  port: { x: 2000, y: 1900, name: 'Port Verde' },
+  cannery: { x: 2000, y: 1130, name: 'Old Cannery' },
+  safehouse: { x: 900, y: 400, name: 'Safehouse Garage' },
+  shop: { x: 1250, y: 950, name: 'Verde Arms' },
+  hospital: { x: 350, y: 600, name: 'Verde General' },
+  beach: { x: 1300, y: 1650, name: 'Palma Beach' },
+};
 
-// District of a point. Water (the channel + outer sea) wins first.
+const DISTRICT_ORDER = ['water', 'residential', 'downtown', 'oldtown', 'beach', 'industrial', 'strip', 'marina', 'isla'];
+
 export function districtAt(x, y) {
-  if (x < MAP.minX || x > MAP.maxX || y < MAP.minY || y > MAP.maxY) return 'water';
-  if (x >= 2620 && x < 2900) return 'water';
-  for (const d of DISTRICTS) {
-    if (d.id === 'water') continue;
-    if (x >= d.x0 && x <= d.x1 && y >= d.y0 && y <= d.y1) return d.id;
+  for (const id of DISTRICT_ORDER) {
+    const d = DISTRICTS[id];
+    if (x >= d.x0 && x < d.x1 && y >= d.y0 && y < d.y1) return id;
   }
-  if (x >= 2900) return 'isla';
-  if (y >= 1400) return 'beach';
   return 'downtown';
 }
 
-// Human name of where a point is: nearest named place wins, else the district.
+const PLACE_NAMES = [
+  { key: 'ferry', name: 'Ferry Terminal' },
+  { key: 'marina', name: 'Marina del Sol' },
+  { key: 'cannery', name: 'Old Cannery' },
+];
+
 export function districtNameAt(x, y) {
-  let best = null;
-  let bestD = 140;
-  for (const key of Object.keys(PLACES)) {
-    const p = PLACES[key];
-    const d = dist(x, y, p.x, p.y);
-    if (d < bestD) {
-      bestD = d;
-      best = p.label;
-    }
+  for (const p of PLACE_NAMES) {
+    const pl = PLACES[p.key];
+    const dx = x - pl.x, dy = y - pl.y;
+    if (dx * dx + dy * dy < 90 * 90) return p.name;
   }
-  if (best) return best;
-  const id = districtAt(x, y);
-  const d = DISTRICTS.find((r) => r.id === id);
-  return d ? d.name : 'Verde Bay';
+  return DISTRICTS[districtAt(x, y)].name;
 }
 
 function onRoad(x, y) {
-  for (const rx of ROADS_X) if (Math.abs(x - rx) < ROAD_HALF + 8) return true;
-  for (const ry of ROADS_Y) if (Math.abs(y - ry) < ROAD_HALF + 8) return true;
+  for (const rx of ROAD_X) if (Math.abs(x - rx) < ROAD_HALF + 30) return true;
+  for (const ry of ROAD_Y) if (Math.abs(y - ry) < ROAD_HALF + 30) return true;
   return false;
 }
 
-function nearPlace(x, y, r) {
-  for (const key of Object.keys(PLACES)) {
-    const p = PLACES[key];
-    if (dist(x, y, p.x, p.y) < r) return true;
-  }
-  return false;
-}
+const BEACH_ROOFS = ['#f4a261', '#e9c46a', '#f7ede2', '#ee9b7a'];
+const CITY_ROOFS = ['#5b6b7a', '#7a6b5b', '#4a5b6b', '#8a7a6b', '#6b7a5b'];
 
-function insideBuilding(buildings, x, y, pad) {
-  for (const b of buildings) {
-    if (x > b.x - b.w / 2 - pad && x < b.x + b.w / 2 + pad && y > b.y - b.d / 2 - pad && y < b.y + b.d / 2 + pad) return true;
-  }
-  return false;
-}
-
-// Build the whole city from a seed. Deterministic: same seed, same city.
 export function generateCity(seed) {
-  const rng = mulberry32(seed);
+  const rng = mulberry32(seed * 7919 + 13);
   const buildings = [];
-  const palms = [];
-  const packages = [];
+  const addBuilding = (district, x, y, w, d, floors, roof, opts = {}) => {
+    buildings.push({
+      x, y, w, d, floors,
+      height: floors * 14 + 6,
+      roof, district,
+      neon: !!opts.neon,
+      stack: !!opts.stack,
+      color: opts.color || '#9aa5b1',
+    });
+  };
 
-  // Road segments for the renderer and the traffic AI.
-  const roads = [];
-  for (const rx of ROADS_X) {
-    const y0 = rx === 3100 ? 720 : 60;
-    const y1 = rx === 3100 ? 1480 : 2060;
-    roads.push({ x1: rx, y1: y0, x2: rx, y2: y1 });
+  // Downtown towers.
+  for (let i = 0; i < 16; i++) {
+    const x = 850 + rng() * 500, y = 650 + rng() * 400;
+    if (onRoad(x, y)) continue;
+    addBuilding('downtown', x, y, 60 + rng() * 50, 60 + rng() * 50,
+      4 + Math.floor(rng() * 7), pick(rng, CITY_ROOFS));
   }
-  for (const ry of ROADS_Y) {
-    roads.push({ x1: 60, y1: ry, x2: 3360, y2: ry });
-  }
-
-  // Building blocks: the gaps between roads (and the water channel, which no
-  // block may span). Each gap is a city block.
-  function gaps(blocked, min, max) {
-    const ivs = [...blocked].sort((a, b) => a[0] - b[0]);
-    const out = [];
-    let cur = min;
-    for (const [a, b] of ivs) {
-      if (a - cur > 60) out.push([cur, a]);
-      cur = Math.max(cur, b);
-    }
-    if (max - cur > 60) out.push([cur, max]);
-    return out;
-  }
-  const blockedX = ROADS_X.map((r) => [r - ROAD_HALF - 10, r + ROAD_HALF + 10]);
-  blockedX.push([2620, 2900]); // the channel splits the mainland from Isla Verde
-  const cellX = gaps(blockedX, 60, 3360);
-  const blockedY = ROADS_Y.map((r) => [r - ROAD_HALF - 10, r + ROAD_HALF + 10]);
-  const cellY = gaps(blockedY, 60, 2080);
-
-  for (const [cx0, cx1] of cellX) {
-    for (const [cy0, cy1] of cellY) {
-      const cx = (cx0 + cx1) / 2;
-      const cy = (cy0 + cy1) / 2;
-      const district = districtAt(cx, cy);
-      if (district === 'water') continue;
-      // One to four buildings per block, shaped by district.
-      let count = 2;
-      if (district === 'downtown') count = rangeInt(rng, 2, 4);
-      else if (district === 'industrial') count = rangeInt(rng, 2, 3);
-      else if (district === 'strip') count = rangeInt(rng, 2, 3);
-      else if (district === 'residential' || district === 'beach') count = rangeInt(rng, 1, 3);
-      else count = rangeInt(rng, 1, 2);
-      for (let i = 0; i < count; i++) {
-        const w = district === 'industrial' ? range(rng, 70, 120) : range(rng, 34, 74);
-        const d = district === 'industrial' ? range(rng, 46, 80) : range(rng, 30, 62);
-        const x = range(rng, cx0 + w / 2 + 4, cx1 - w / 2 - 4);
-        const y = range(rng, cy0 + d / 2 + 4, cy1 - d / 2 - 4);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        if (nearPlace(x, y, 100)) continue;
-        let floors;
-        let roof;
-        let neon = false;
-        let stack = false;
-        if (district === 'industrial') {
-          floors = 1;
-          roof = pick(rng, ['#6b7280', '#7d7468', '#5c6650']);
-          stack = rng() < 0.45;
-        } else if (district === 'beach') {
-          floors = rangeInt(rng, 1, 3);
-          roof = pick(rng, BEACH_ROOFS);
-        } else if (district === 'oldtown') {
-          floors = rangeInt(rng, 1, 2);
-          roof = pick(rng, BRICK_ROOFS);
-        } else if (district === 'strip') {
-          floors = rangeInt(rng, 2, 6);
-          roof = pick(rng, CITY_ROOFS);
-          neon = rng() < 0.6;
-        } else if (district === 'downtown') {
-          floors = rangeInt(rng, 4, 12);
-          roof = pick(rng, CITY_ROOFS);
-          neon = rng() < 0.12;
-        } else if (district === 'isla') {
-          floors = rangeInt(rng, 2, 4);
-          roof = pick(rng, RESORT_ROOFS);
-        } else if (district === 'marina') {
-          floors = rangeInt(rng, 1, 3);
-          roof = pick(rng, ['#e9ecef', '#8ecae6', '#f4a261']);
-        } else {
-          floors = rangeInt(rng, 1, 3);
-          roof = pick(rng, CITY_ROOFS);
-        }
-        buildings.push({
-          x, y, w, d, floors, roof, neon, stack, district,
-          height: floors * 9 + 6,
-          color: roof,
-        });
-      }
-    }
-  }
-
-  // Palms: a beach grove first, then a scatter through the leafy districts.
-  let placed = 0;
-  let guard = 0;
-  while (placed < 16 && guard < 400) {
-    guard += 1;
-    const x = range(rng, 860, 1750);
-    const y = range(rng, 1430, 1880);
-    if (insideBuilding(buildings, x, y, 12)) continue;
-    if (nearPlace(x, y, 60)) continue;
-    palms.push({ x, y, h: range(rng, 16, 26) });
-    placed += 1;
-  }
-  guard = 0;
-  while (palms.length < 26 && guard < 400) {
-    guard += 1;
-    const spot = pick(rng, [
-      [range(rng, 700, 1600), range(rng, 100, 480)],
-      [range(rng, 1950, 2400), range(rng, 1780, 2020)],
-      [range(rng, 2950, 3300), range(rng, 750, 1450)],
-      [range(rng, 850, 1750), range(rng, 1430, 1880)],
-    ]);
-    const [x, y] = spot;
-    if (districtAt(x, y) === 'water') continue;
-    if (insideBuilding(buildings, x, y, 12)) continue;
-    palms.push({ x, y, h: range(rng, 16, 26) });
-  }
-
-  // Ten hidden packages, spread across the map on open ground.
-  const pkgSpots = [
-    [PLACES.park.x + 40, PLACES.park.y + 30],
-    [PLACES.plaza.x - 50, PLACES.plaza.y + 40],
-    [PLACES.pier.x + 30, PLACES.pier.y - 20],
-    [PLACES.stadium.x + 60, PLACES.stadium.y - 30],
-    [PLACES.diner.x - 40, PLACES.diner.y + 50],
-    [PLACES.cannery.x + 70, PLACES.cannery.y + 20],
-    [PLACES.hotel.x - 60, PLACES.hotel.y - 40],
-    [PLACES.lighthouse.x - 50, PLACES.lighthouse.y + 40],
-    [PLACES.airstrip.x + 40, PLACES.airstrip.y + 60],
-    [PLACES.club.x - 50, PLACES.club.y + 30],
+  // Industrial: single-storey warehouses, some with smokestacks. Placed on fixed
+  // spots clear of the roads (x=1950/2250, y=1050) so the district is never empty.
+  const indSpots = [
+    [2080, 880], [2160, 1180], [2380, 880], [2440, 1180], [2100, 1250], [2400, 950],
   ];
-  for (const [x, y] of pkgSpots) {
-    packages.push({ x, y, taken: false, id: packages.length });
+  indSpots.forEach(([x, y], i) => {
+    addBuilding('industrial', x, y, 110 + (i % 3) * 20, 80 + (i % 2) * 20, 1,
+      pick(rng, ['#7a7a7a', '#8a6a5a', '#6a7a6a']),
+      { stack: i % 2 === 0, color: '#8a8078' });
+  });
+  // Beachfront: low pastel blocks.
+  for (let i = 0; i < 10; i++) {
+    const x = 950 + rng() * 650, y = 1550 + rng() * 400;
+    if (onRoad(x, y)) continue;
+    addBuilding('beach', x, y, 55 + rng() * 40, 55 + rng() * 40,
+      1 + Math.floor(rng() * 2), pick(rng, BEACH_ROOFS));
   }
+  // Old Town: low brick.
+  for (let i = 0; i < 9; i++) {
+    const x = 80 + rng() * 460, y = 450 + rng() * 500;
+    if (onRoad(x, y)) continue;
+    addBuilding('oldtown', x, y, 50 + rng() * 40, 50 + rng() * 40,
+      1 + Math.floor(rng() * 2), pick(rng, ['#a05a4a', '#b07a5a', '#8a5a4a']),
+      { color: '#a06a5a' });
+  }
+  // Residential: small houses.
+  for (let i = 0; i < 12; i++) {
+    const x = 850 + rng() * 500, y = 60 + rng() * 480;
+    if (onRoad(x, y)) continue;
+    addBuilding('residential', x, y, 40 + rng() * 30, 40 + rng() * 30,
+      1 + Math.floor(rng() * 2), pick(rng, ['#c96a5a', '#5a8a6a', '#6a7ab0', '#d0a05a']));
+  }
+  // The Strip: neon towers. Fixed spots clear of the roads (x=1950/2250, y=1650).
+  const stripSpots = [
+    [2070, 1480], [2160, 1560], [2340, 1480], [2360, 1560], [2100, 1730], [2350, 1730],
+  ];
+  stripSpots.forEach(([x, y], i) => {
+    addBuilding('strip', x, y, 55 + (i % 3) * 20, 55 + (i % 2) * 20,
+      3 + (i % 5), pick(rng, ['#ff2d78', '#22d3ee', '#facc15', '#a855f7']),
+      { neon: i % 2 === 0, color: '#2a2a3a' });
+  });
+  // Marina: low white blocks.
+  for (let i = 0; i < 6; i++) {
+    const x = 1950 + rng() * 400, y = 1780 + rng() * 220;
+    if (onRoad(x, y)) continue;
+    addBuilding('marina', x, y, 50 + rng() * 40, 50 + rng() * 40,
+      1 + Math.floor(rng() * 2), pick(rng, ['#f7f7f7', '#dbeafe', '#fef3c7']));
+  }
+  // Isla Verde: villas.
+  for (let i = 0; i < 7; i++) {
+    const x = 2950 + rng() * 350, y = 950 + rng() * 400;
+    if (onRoad(x, y)) continue;
+    addBuilding('isla', x, y, 45 + rng() * 35, 45 + rng() * 35,
+      1 + Math.floor(rng() * 2), pick(rng, ['#f4a261', '#e9c46a', '#ffffff']));
+  }
+
+  // Palms: a dozen on the beach, a few downtown.
+  const palms = [];
+  for (let i = 0; i < 12; i++) {
+    palms.push({ x: 950 + rng() * 700, y: 1560 + rng() * 380, h: 26 + rng() * 10 });
+  }
+  for (let i = 0; i < 4; i++) {
+    palms.push({ x: 850 + rng() * 500, y: 650 + rng() * 400, h: 22 + rng() * 8 });
+  }
+
+  // Roads: grid segments clipped to the world.
+  const roads = [];
+  for (const ry of ROAD_Y) roads.push({ x0: 0, y0: ry, x1: 2600, y1: ry });
+  for (const ry of ROAD_Y) if (ry >= 950 && ry <= 1350) roads.push({ x0: 2600, y0: ry, x1: 3400, y1: ry });
+  for (const rx of ROAD_X) roads.push({ x0: rx, y0: 0, x1: rx, y1: 2100 });
+
+  // Ten hidden packages, spread across the districts, on land.
+  const pkgSpots = [
+    [900, 200], [1300, 500], [400, 800], [1000, 1000], [1400, 1400],
+    [2100, 900], [2300, 1600], [2000, 1950], [3100, 1000], [3200, 1300],
+  ];
+  const packages = pkgSpots.map(([x, y], i) => ({ id: i, x, y, found: false }));
 
   return {
-    seed,
-    buildings,
-    palms,
-    packages,
-    places: PLACES,
-    roads,
-    bounds: { x0: 0, y0: 0, x1: MAP.w, y1: MAP.h },
+    seed, buildings, palms, roads,
+    places: PLACES, packages,
+    bounds: { w: 3400, h: 2100 },
   };
 }
