@@ -1,8 +1,8 @@
 # VERDE BAY — an open-world crime game
 
 [![make.fun](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
-[![rank](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01)
-[![reward](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01)
+[![rank](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/rank.svg)](https://make.fun/bounty/gta6-01)
+[![reward](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/reward.svg)](https://make.fun/bounty/gta6-01)
 
 **VERDE BAY v9** — the most complete rendition yet of an open-world crime game
 in the browser: a sun-soaked island city you explore on foot and by car, with
