@@ -1,70 +1,62 @@
-// VERDE BAY v9 — screenshot scenes: the `?shot=` query parameter poses the
-// game for the entry's screenshots (and for the maker's own play-tests).
-//   ?shot=start   title screen over the city at dawn
-//   ?shot=drive   the player driving a Vesper GT down the marina road
-//   ?shot=chase   a 3-star chase with police cars and the minimap lit up
-//   ?shot=garage  the Verde Garage shop panel open, player on foot outside
-// Each scene is the real game, not a mock: the same code path a player takes.
-export function shotKind() {
-  const q = new URLSearchParams(window.location.search);
-  return q.get('shot') || null;
-}
+// Screenshot poses: ?shot=start|drive|chase|garage&seed=N
+// Each pose sets the game up deterministically and signals window.__shotReady
+// once the frame is drawn, so a headless browser can capture real renders.
+import { makeCar } from './vehicles.js';
+import { startMission } from './missions.js';
+import { startRace } from './race.js';
+import { raiseWanted } from './weapons.js';
 
-export function applyShot(sim, hud, kind) {
-  if (!kind) return false;
-  const startGame = () => {
-    hud.hideStart();
-    sim.audio.init();
-    sim.audio.resume();
+export function applyShot(G, params) {
+  const shot = params.get('shot') || 'start';
+  window.__shotReady = false;
+  const finish = () => {
+    window.__shotReady = true;
+    document.title = 'VERDE BAY — shot ' + shot;
   };
-  if (kind === 'start') {
-    sim.timeOfDay = 7.2; // dawn light over the bay
-    return true;
+  if (shot === 'start') {
+    G.mode = 'title';
+    setTimeout(finish, 400);
+    return;
   }
-  if (kind === 'drive') {
-    startGame();
-    sim.timeOfDay = 10.5;
-    const car = sim.garage.spawnActiveCar(sim.scene, sim.vehicleClass);
-    // On the x=-180 road, heading +Z: a long clear run down the marina road
-    // with the towers on both sides, not into a building.
-    car.x = -180; car.z = -170;
-    car.heading = 0;
-    sim.vehicles.push(car);
-    sim.enterVehicle(car);
-    car.speed = 18;
-    sim.say('Verde Bay — 12 missions, a garage, races and a crew. Drive!');
-    return true;
+  G.mode = 'play';
+  G.money = 24800;
+  G.player.health = 100; G.player.armor = 60;
+  if (shot === 'drive') {
+    const car = makeCar('sport', 960, 600, 0, 'player');
+    car.upgrades = { engine: 2, armor: 1, nos: 2 };
+    car.speed = 260;
+    G.cars.push(car);
+    G.player.car = car; G.player.onFoot = false;
+    G.player.x = car.x; G.player.y = car.y;
+    startMission(G, 2);
+    setTimeout(finish, 900);
+  } else if (shot === 'chase') {
+    const car = makeCar('muscle', 1560, 900, 0, 'player');
+    car.upgrades = { engine: 1, armor: 1, nos: 1 };
+    car.speed = 320;
+    G.cars.push(car);
+    G.player.car = car; G.player.onFoot = false;
+    G.player.x = car.x; G.player.y = car.y;
+    G.wanted = 4; G.heat = 100;
+    for (let i = 0; i < 3; i++) {
+      const pc = makeCar('sedan', car.x - 260 - i * 100, car.y + (i % 2 ? 30 : -30), 0, 'police');
+      pc.color = '#222831'; pc.speed = 300;
+      G.cars.push(pc);
+    }
+    G.heli = { angle: 0.6, r: 240, x: car.x + 150, y: car.y - 150 };
+    startRace(G);
+    setTimeout(finish, 900);
+  } else if (shot === 'garage') {
+    G.garage.owned = ['sedan', 'taxi', 'coupe', 'muscle'];
+    G.garage.upgrades = {
+      sedan: { engine: 1, armor: 0, nos: 0 },
+      taxi: { engine: 0, armor: 1, nos: 0 },
+      coupe: { engine: 2, armor: 1, nos: 1 },
+      muscle: { engine: 1, armor: 2, nos: 1 },
+    };
+    G.mode = 'garage';
+    setTimeout(finish, 600);
+  } else {
+    setTimeout(finish, 400);
   }
-  if (kind === 'chase') {
-    startGame();
-    sim.timeOfDay = 16.5;
-    const car = sim.garage.spawnActiveCar(sim.scene, sim.vehicleClass);
-    car.x = 0; car.z = -60;
-    car.heading = 0;
-    sim.vehicles.push(car);
-    sim.enterVehicle(car);
-    car.speed = 22;
-    sim.setWantedStars(3);
-    sim.say('3 stars — the VCPD is on you. NOS is Shift.');
-    return true;
-  }
-  if (kind === 'garage') {
-    startGame();
-    sim.timeOfDay = 12.0;
-    sim.money = 12500;
-    sim.player.x = -40;
-    sim.player.z = 118;
-    sim.player.mesh.position.set(-40, 0, 118);
-    sim.player.heading = Math.PI;
-    sim.garage.open = true;
-    hud.openGarage();
-    sim.say('Verde Garage — buy cars, tune them, keep them.');
-    return true;
-  }
-  if (kind === 'mission') {
-    startGame();
-    sim.missions.start();
-    return true;
-  }
-  return false;
 }

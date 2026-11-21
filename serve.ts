@@ -1,8 +1,6 @@
-// VERDE BAY v9 — a tiny static server for local play-testing (Node 22,
-// standard library only): `node serve.ts` serves game/ on
-// http://localhost:8080. It sends the MIME types a browser game needs and
-// refuses any path outside game/. A development convenience, not a server
-// for the internet — the entry itself is plain static files.
+// A tiny static server for game/ (Node 22, standard library only).
+// `node serve.ts` serves game/ on http://localhost:8080 so the game can be
+// played locally without a build step. Development convenience only.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
@@ -10,9 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('./game', import.meta.url)));
 const args = process.argv.slice(2);
-const portArg = args.indexOf('--port');
-const wanted = portArg === -1 ? 8080 : Number(args[portArg + 1]);
-const port = Number.isInteger(wanted) && wanted > 0 && wanted < 65536 ? wanted : 8080;
+const portIndex = args.indexOf('--port');
+const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
+const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -28,6 +26,10 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.bin': 'application/octet-stream',
+  '.wasm': 'application/wasm',
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
   '.ogg': 'audio/ogg',
@@ -65,5 +67,5 @@ createServer((request, response) => {
   });
   createReadStream(file).pipe(response);
 }).listen(port, '127.0.0.1', () => {
-  console.log('VERDE BAY game/ is on http://localhost:' + port);
+  console.log(`game/ is on http://localhost:${port}`);
 });

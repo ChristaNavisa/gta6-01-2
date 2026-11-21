@@ -1,85 +1,102 @@
-// VERDE BAY v9 — particles and juice: explosions, muzzle flashes, NOS flames,
-// dust puffs and camera shake. All particles are plain three.js points that
-// recycle, so the game never allocates during a chase.
-import { rand } from './util.js';
+// Particles, skid marks, floating text, muzzle flashes, explosions, screen shake,
+// and the day/night lighting tint. Pure canvas, no assets.
+import { rand, clamp } from './util.js';
 
-const THREE = window.THREE;
+export function createEffects() {
+  return { particles: [], skids: [], texts: [], shake: 0 };
+}
 
-export class Effects {
-  constructor(scene) {
-    this.scene = scene;
-    this.particles = [];
-    this.shake = 0;
-    this.pool = [];
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 600), 3));
-    this.points = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.7, vertexColors: true, transparent: true, opacity: 0.95 }));
-    this.points.frustumCulled = false;
-    scene.add(this.points);
-    this.colors = new Float32Array(3 * 600);
-    geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
-  }
-  burst(x, y, z, color, count, speed, life, up) {
-    for (let i = 0; i < count; i++) {
-      if (this.particles.length >= 600) break;
-      const p = this.pool.pop() || {};
-      const a = rand(0, Math.PI * 2);
-      const v = rand(0.3, 1) * speed;
-      p.x = x; p.y = y; p.z = z;
-      p.vx = Math.cos(a) * v;
-      p.vy = rand(0.2, 1) * (up || speed * 0.6);
-      p.vz = Math.sin(a) * v;
-      p.life = rand(0.4, 1) * life;
-      p.maxLife = p.life;
-      p.r = ((color >> 16) & 255) / 255;
-      p.g = ((color >> 8) & 255) / 255;
-      p.b = (color & 255) / 255;
-      this.particles.push(p);
-    }
-  }
-  explosion(x, y, z) {
-    this.burst(x, y + 1, z, 0xff7a1a, 46, 14, 1.1, 10);
-    this.burst(x, y + 0.6, z, 0x333333, 24, 7, 1.8, 6);
-    this.burst(x, y + 1, z, 0xffd23c, 20, 18, 0.5, 8);
-    this.shake = Math.min(this.shake + 0.7, 1.2);
-  }
-  muzzle(x, y, z) { this.burst(x, y, z, 0xffe9a8, 5, 6, 0.18, 2); }
-  nosFlame(x, y, z, heading) {
-    const bx = x + Math.sin(heading) * 2.4;
-    const bz = z + Math.cos(heading) * 2.4;
-    this.burst(bx, y + 0.5, bz, 0x3fa8ff, 6, 4, 0.3, 1);
-    this.burst(bx, y + 0.5, bz, 0xff9a1a, 3, 3, 0.25, 1);
-  }
-  dust(x, y, z) { this.burst(x, y + 0.2, z, 0xb8a888, 3, 2.5, 0.6, 1.5); }
-  blood(x, y, z) { this.burst(x, y + 1, z, 0xb01a1a, 8, 4, 0.5, 2); }
-  addShake(amount) { this.shake = Math.min(this.shake + amount, 1.2); }
-  update(dt) {
-    this.shake = Math.max(0, this.shake - dt * 1.8);
-    const pos = this.points.geometry.attributes.position.array;
-    const col = this.points.geometry.attributes.color.array;
-    let n = 0;
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.life -= dt;
-      if (p.life <= 0) { this.pool.push(p); this.particles.splice(i, 1); continue; }
-      p.vy -= 9 * dt;
-      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      if (p.y < 0.1) { p.y = 0.1; p.vy *= -0.3; }
-      pos[n * 3] = p.x; pos[n * 3 + 1] = p.y; pos[n * 3 + 2] = p.z;
-      const fade = p.life / p.maxLife;
-      col[n * 3] = p.r * fade; col[n * 3 + 1] = p.g * fade; col[n * 3 + 2] = p.b * fade;
-      n++;
-    }
-    // Hide the unused tail of the buffer below the ground.
-    for (let i = n; i < 600; i++) { pos[i * 3 + 1] = -50; }
-    this.points.geometry.attributes.position.needsUpdate = true;
-    this.points.geometry.attributes.color.needsUpdate = true;
-    this.points.geometry.setDrawRange(0, Math.max(n, 1));
-  }
-  // Apply the current shake to a camera after its normal update.
-  applyShake(camera) {
-    if (this.shake <= 0.01) return;
-    camera.position.x += rand(-1, 1) * this.shake * 0.35;
-    camera.position.y += rand(-1, 1) * this.shake * 0.25;
+export function addShake(fx, amount) { fx.shake = Math.min(18, fx.shake + amount); }
+
+export function spawnBurst(fx, x, y, color, n, speed) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = (speed || 120) * (0.4 + Math.random() * 0.8);
+    fx.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5 + Math.random() * 0.5, max: 1, color, size: 2 + Math.random() * 4 });
   }
 }
+
+export function spawnSmoke(fx, x, y) {
+  fx.particles.push({ x, y, vx: rand(-8, 8), vy: rand(-24, -8), life: 1.2, max: 1.2, color: '#999', size: 6 + Math.random() * 6, smoke: true });
+}
+
+export function spawnFlame(fx, x, y, angle) {
+  fx.particles.push({ x, y, vx: Math.cos(angle) * 160 + rand(-20, 20), vy: Math.sin(angle) * 160 + rand(-20, 20), life: 0.35, max: 0.35, color: Math.random() < 0.5 ? '#ff9d00' : '#ffdd55', size: 5 + Math.random() * 4 });
+}
+
+export function spawnExplosion(fx, x, y) {
+  spawnBurst(fx, x, y, '#ff7b00', 26, 260);
+  spawnBurst(fx, x, y, '#ffdd55', 18, 180);
+  spawnBurst(fx, x, y, '#555', 12, 90);
+  addShake(fx, 10);
+}
+
+export function addSkid(fx, x, y, angle) {
+  fx.skids.push({ x, y, angle, life: 6 });
+  if (fx.skids.length > 400) fx.skids.splice(0, fx.skids.length - 400);
+}
+
+export function addText(fx, x, y, text, color) {
+  fx.texts.push({ x, y, text, color: color || '#fff', life: 1.6 });
+}
+
+export function updateEffects(fx, dt) {
+  for (const p of fx.particles) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.96; p.vy *= 0.96;
+    p.life -= dt;
+  }
+  fx.particles = fx.particles.filter((p) => p.life > 0);
+  for (const s of fx.skids) s.life -= dt;
+  fx.skids = fx.skids.filter((s) => s.life > 0);
+  for (const t of fx.texts) { t.y -= 26 * dt; t.life -= dt; }
+  fx.texts = fx.texts.filter((t) => t.life > 0);
+  fx.shake = Math.max(0, fx.shake - dt * 30);
+}
+
+export function drawEffects(ctx, fx, cam) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(20,20,20,0.5)';
+  ctx.lineWidth = 5;
+  for (const s of fx.skids) {
+    ctx.save();
+    ctx.translate(s.x - cam.x, s.y - cam.y);
+    ctx.rotate(s.angle);
+    ctx.globalAlpha = clamp(s.life / 6, 0, 0.55);
+    ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+  for (const p of fx.particles) {
+    ctx.globalAlpha = clamp(p.life / p.max, 0, p.smoke ? 0.35 : 0.9);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x - cam.x, p.y - cam.y, p.size, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 15px monospace';
+  for (const t of fx.texts) {
+    ctx.globalAlpha = clamp(t.life, 0, 1);
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, t.x - cam.x, t.y - cam.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Day/night overlay: hours 6-18 daylight, 18-6 night with streetlight glow.
+export function drawDayNight(ctx, w, h, clock) {
+  const night = clock < 6 || clock >= 18;
+  if (!night) {
+    // Golden hour tint.
+    if (clock >= 16.5 && clock < 18) {
+      ctx.fillStyle = 'rgba(255,150,60,0.08)';
+      ctx.fillRect(0, 0, w, h);
+    }
+    return;
+  }
+  const depth = clock >= 20 || clock < 5 ? 0.42 : 0.28;
+  ctx.fillStyle = `rgba(8,12,40,${depth})`;
+  ctx.fillRect(0, 0, w, h);
+}
+
+export function isNight(clock) { return clock < 6 || clock >= 18; }

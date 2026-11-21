@@ -4,90 +4,64 @@
 [![rank](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/rank.svg)](https://make.fun/bounty/gta6-01)
 [![reward](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/reward.svg)](https://make.fun/bounty/gta6-01)
 
-**VERDE BAY v9** — the most complete rendition yet of an open-world crime game
-in the browser: a sun-soaked island city you explore on foot and by car, with
-traffic and pedestrians, cars to steal, a wanted system with police cars,
-a helicopter and a military response, 12 story missions, and a garage, street
-races, a crew and respect to build.
+**VERDE BAY** is a complete open-world crime game for the [Make GTA 6](https://make.fun/bounty/gta6-01) bounty on make.fun: a sun-soaked fictional city you explore on foot and by car, with traffic and pedestrians, cars to steal, a wanted level with police who respond, twelve story missions, combat, businesses, a crew, and a HUD with a live minimap.
 
-## What is in the game
+## Play it
 
-- **A living city** — Verde Bay: 7×7 blocks of towers with lit windows, a
-  marina, downtown, harbor, hills and old town, palms, streetlights and a
-  day/night cycle with a real sun.
-- **Drive and steal** — traffic follows the roads, parked cars wait at the
-  curb. Press E to carjack a driver or take a parked car; get out the same way.
-- **Garage** — buy cars (6 models, from the Pip Hatch to the Bison Muscle),
-  fit engine stages, armor, a bigger NOS tank, neon underglow and gold paint.
-  Owned cars and upgrades persist in the save.
-- **NOS** — hold Shift in a car for a nitrous boost: the HUD meter drains and
-  refills, with flames and a speed kick.
-- **Minimap** — a live canvas map in the HUD corner: you, police, the mission
-  marker, the garage, shops and race rings.
-- **Street races** — checkpoint courses with a par time and a payout (Bay
-  Sprint, Harbor Loop). Mara's crew ability pays +20%.
-- **Crew & respect** — Mara Voss (driver) and Dario Kane (muscle) join you as
-  the story goes on. Respect grows with missions and unlocks a shop discount,
-  a free Vesper GT, stronger crew abilities and gold paint.
-- **Weapon wheel** — five weapons (pistol, SMG, shotgun, rifle, LMG). Hold Q
-  or press 1–5; buy new ones at shops with mission money.
-- **12 story missions** — from "First Wheels" to "The Big Score": courier
-  runs, getaways, races, protection, a bank job and a 5-star finale. $48,000+
-  in payouts, $12,000 for the last job alone.
-- **Wanted** — 0 to 5 stars. Police chase and ram; at 5 stars a military
-  jeep and a helicopter with a spotlight join in. Lose them, get busted, or
-  get wasted — and wake up at the safehouse.
-- **Radio** — three procedural stations (Bay FM, Verde Beats, Harbour Jazz),
-  engine hum, sirens, gunshots and a mission fanfare. All synthesized, no
-  audio files.
-- **Save** — progress autosaves after every mission; F saves anywhere.
+```sh
+node serve.ts
+# open http://localhost:8080
+```
 
-## How to play
+No build step, no network requests — plain static files under `game/`.
 
-Serve `game/` with any static server (`node serve.ts`, then
-http://localhost:8080) and open `game/index.html` in desktop Chrome. No
-network request is made: three.js is vendored under `game/vendor/`, every
-sound is synthesized, every texture is drawn in code.
+## The city
 
-| Key | Action |
-| --- | ------ |
-| WASD / arrows | Walk / drive |
-| Shift | Run · NOS boost in a car |
-| E | Enter / steal a car · open garage / shop |
-| Mouse click | Shoot (on foot) |
-| Q (hold) / 1–5 | Weapon wheel |
-| M | Start the next mission |
-| R | Radio station |
-| F | Save |
-| Esc | Pause |
-| H | Help |
+Verde Bay is a 3600×3600 top-down city in six districts — Downtown Verde, Marina Bay, North Hills, Old Town, Portside and Sunset Beach — with a road grid, parks, a beach, a port, stunt ramps, a garage, a gun store and a hospital. A day/night cycle changes the light and switches the headlights on after dark.
 
-## How it is built
+## Systems
 
-`game/` is plain static files, no build step. The source is split into one
-file per job so the structure reads at a glance:
+- **12 story missions** — pickups, package runs, ambushes, a grand race and a final showdown, with a mission fanfare and payouts.
+- **Garage** — 6 cars to buy and upgrade (engine, armor, NOS), each with its own handling.
+- **NOS boost** — a meter, flame effects and a sound cue on Shift.
+- **Live minimap** — player, cars, police, helicopter, mission markers, race checkpoints and taxi fares.
+- **Carjacking** — steal parked and traffic cars; stealing in front of police raises your wanted level.
+- **Street races** — 6 checkpoints, a timer and a saved best time.
+- **Crew** — Mara (driver, heat fades faster) and Dario (muscle, fights beside you), recruited through the story.
+- **District respect** — earn it with missions, fares and business; it unlocks garage discounts.
+- **Weapon wheel** — 5 weapons (fists, pistol, SMG, shotgun, rifle) with ammo sold at the gun store.
+- **Police** — wanted stars 1–5, patrol cars, a visible helicopter at 3+ stars, military jeeps at 5 stars.
+- **Businesses** — buy the Laundromat, the Sunset Motel and Club Nova; they pay out every minute.
+- **Taxi fares** — pick up passengers and drop them off for fast cash.
+- **Stunt jumps** — ramps pay air-time bonuses.
+- **Save** — progress saves to localStorage; continue from the title screen.
 
-- `src/config.js` — every number: districts, weapons, cars, garage, crew, races, missions
-- `src/city.js` — the procedural island city
-- `src/render3d.js` — renderer, chase camera, sun/sky, car and ped meshes
-- `src/vehicles.js` — arcade car physics, traffic AI, police chase, helicopter
-- `src/weapons.js` — five weapons and the weapon wheel
-- `src/garage.js` — car shop and tuning, saved
-- `src/race.js` — checkpoint street races with par times
-- `src/crew.js` — crew abilities, respect tiers, district standing
-- `src/sim.js` — the world: player, wanted, police, pedestrians, collisions
-- `src/missions.js` — the 12-mission story runner
-- `src/hud.js` — HUD, live minimap, garage panel
-- `src/effects.js` — particles, explosions, NOS flames, camera shake
-- `src/audio.js` — procedural WebAudio: engine, sirens, radio, gunshots
-- `src/save.js` — localStorage save / load
-- `src/shots.js` — `?shot=` scenes for the entry screenshots
-- `src/main.js` — entrypoint, frame loop, menu and key bindings
+## Controls
 
-`main.ts` (Node 22, standard library only) copies `game/` and `screenshots/`
-to `/output` and writes `/output/dossier.json` with the vendored make.fun
-library. Screenshots are real renders of this code in a browser.
+WASD / arrows move and drive · E enter / steal car · mouse aim, click shoot · Q weapon wheel · 1–5 weapons · Shift NOS · Space handbrake · G garage · B buy business · T taxi fare · M next mission · U gun store · H hospital · R radio · P save · Esc pause.
+
+## Files
+
+| File | Job |
+| --- | --- |
+| `game/src/main.js` | Game state, loop, player controls, menus |
+| `game/src/config.js` | World, districts, cars, weapons, missions, businesses |
+| `game/src/city.js` | Map generation, roads, buildings, collision |
+| `game/src/vehicles.js` | Car physics, traffic AI, police driving |
+| `game/src/weapons.js` | Shooting, bullets, weapon shop |
+| `game/src/sim.js` | Pedestrians, police response, helicopter, taxi, business income |
+| `game/src/missions.js` | Twelve story missions (step interpreter) |
+| `game/src/race.js` | Street races: checkpoints, timer, best time |
+| `game/src/garage.js` | Car shop, upgrades, taking cars out |
+| `game/src/crew.js` | Mara, Dario and district respect |
+| `game/src/effects.js` | Particles, skid marks, day/night light |
+| `game/src/hud.js` | HUD readouts and the live minimap |
+| `game/src/audio.js` | Procedural sound effects and radio |
+| `game/src/input.js` | Keyboard and mouse input |
+| `game/src/save.js` | localStorage save / load |
+| `game/src/shots.js` | Screenshot poses (`?shot=...`) |
+| `main.ts` | Entry program: copies game + screenshots, writes dossier.json |
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see `LICENSE`. An original game: its own city, characters, vehicles, names, story, art, sounds and music. Not affiliated with Rockstar Games.

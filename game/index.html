@@ -4,74 +4,77 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VERDE BAY — an open-world crime game</title>
-<link rel="icon" href="data:,">
-<link rel="stylesheet" href="css/style.css">
-<script src="vendor/three.min.js"></script>
+<link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
 <canvas id="game"></canvas>
 
-<div id="start-screen">
-  <h1 id="game-title">VERDE BAY</h1>
-  <p class="tagline">An open-world crime game — 12 missions, a garage, street races, a crew.</p>
-  <p class="story">You are Alex Vane, fresh out of the Marina lockup with $500 and a stolen
-  hatchback. Rico has work. Mara has races. Dario has a crew. The city has
-  everything you need — if you can take it.</p>
-  <div class="start-buttons">
-    <button id="start-btn">PLAY — CONTINUE</button>
-    <button id="new-btn">NEW GAME</button>
+<div id="hud">
+  <div class="hud-top-left">
+    <div id="hud-money" class="money">$1,500</div>
+    <div id="hud-mission" class="mission"></div>
+    <div id="hud-toast" class="toast"></div>
   </div>
-  <div class="controls">
-    <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Shift</b> run / NOS boost &nbsp;·&nbsp;
-    <b>E</b> enter car · garage · shop &nbsp;·&nbsp; <b>Mouse</b> shoot<br>
-    <b>Q</b> weapon wheel &nbsp;·&nbsp; <b>1–5</b> weapons &nbsp;·&nbsp; <b>M</b> next mission<br>
-    <b>R</b> radio &nbsp;·&nbsp; <b>F</b> save &nbsp;·&nbsp; <b>Esc</b> pause &nbsp;·&nbsp; <b>H</b> help
+  <div class="hud-top-right">
+    <div id="hud-wanted" class="wanted">☆☆☆☆☆</div>
+    <div id="hud-clock" class="clock">08:30</div>
+    <div id="hud-district" class="district">Downtown Verde</div>
   </div>
-  <p class="systems">GARAGE · NOS · MINIMAP · CARJACKING · STREET RACES · CREW &amp; RESPECT ·
-  WEAPON WHEEL · 5-STAR WANTED · DAY / NIGHT · SAVE</p>
+  <div class="hud-bottom-left">
+    <div class="bar-label">HEALTH</div>
+    <div class="bar"><div id="hud-health" class="fill health"></div></div>
+    <div class="bar-label">ARMOR</div>
+    <div class="bar"><div id="hud-armor" class="fill armor"></div></div>
+    <div class="bar-label">NOS</div>
+    <div class="bar"><div id="hud-nos" class="fill nos"></div></div>
+    <div id="hud-weapon" class="weapon">Fists</div>
+    <div id="hud-speed" class="speed">ON FOOT</div>
+  </div>
+  <div class="hud-bottom-right">
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div class="map-label">VERDE BAY</div>
+  </div>
 </div>
 
-<div id="hud" style="display:none">
-  <div id="top-left">
-    <div id="stars" class="stars">☆☆☆☆☆</div>
-    <div id="money">$500</div>
-    <div id="respect">RESPECT 0/100</div>
-    <div id="district">MARINA</div>
-    <div id="clock">DAY 1 09:30</div>
+<div id="weapon-wheel"></div>
+
+<div id="title-screen" class="overlay">
+  <div class="title-box">
+    <div class="kicker">AN OPEN-WORLD CRIME GAME</div>
+    <h1>VERDE<br>BAY</h1>
+    <p class="tagline">Twelve missions. Six cars. Two crew. One city that never sleeps.</p>
+    <button id="btn-new" class="big-btn">NEW GAME</button>
+    <button id="btn-continue" class="big-btn">CONTINUE</button>
+    <button id="btn-help" class="big-btn ghost">HOW TO PLAY</button>
+    <div id="help-box" class="help">
+      <b>WASD / Arrows</b> move &amp; drive &nbsp;•&nbsp; <b>E</b> enter / steal car &nbsp;•&nbsp; <b>Mouse</b> aim, <b>Click</b> shoot<br>
+      <b>Q</b> weapon wheel &nbsp;•&nbsp; <b>1–5</b> weapons &nbsp;•&nbsp; <b>Shift</b> NOS boost &nbsp;•&nbsp; <b>Space</b> handbrake<br>
+      <b>G</b> garage (near the red marker) &nbsp;•&nbsp; <b>B</b> buy business &nbsp;•&nbsp; <b>T</b> taxi fare &nbsp;•&nbsp; <b>M</b> next mission<br>
+      <b>U</b> gun store &nbsp;•&nbsp; <b>H</b> hospital &nbsp;•&nbsp; <b>R</b> radio &nbsp;•&nbsp; <b>P</b> save &nbsp;•&nbsp; <b>Esc</b> pause
+    </div>
+    <p class="credit">A fan-made open-world game. Original city, characters and story — not affiliated with Rockstar Games.</p>
   </div>
-  <div id="top-right">
-    <canvas id="minimap" width="168" height="168"></canvas>
-    <div id="objective"></div>
-    <div id="race"></div>
-  </div>
-  <div id="bottom-left">
-    <div id="health">HP 100</div>
-    <div id="weapon">P9 Pistol</div>
-    <div id="speed"></div>
-    <div id="nos"><div id="nos-fill"></div><span>NOS — SHIFT</span></div>
-  </div>
-  <div id="bottom-center">
-    <div id="mission"></div>
-    <div id="message"></div>
-  </div>
-  <div id="wheel" style="display:none"></div>
-  <div id="garage" style="display:none"></div>
-  <div id="menu"></div>
 </div>
 
-<div id="help" style="display:none">
-  <h2>HOW TO PLAY</h2>
-  <p><b>WASD / arrows</b> — walk or drive. <b>Shift</b> — run on foot, NOS boost in a car.</p>
-  <p><b>E</b> — steal / enter a car, get out, open the garage or a shop.</p>
-  <p><b>Mouse click</b> — shoot (on foot). <b>Q</b> (hold) or <b>1–5</b> — weapon wheel.</p>
-  <p><b>M</b> — start the next story mission. <b>R</b> — change radio station.</p>
-  <p><b>F</b> — save. <b>Esc</b> — pause. Missions pay money and respect; respect
-  unlocks a shop discount, a free Vesper GT, stronger crew and gold paint.</p>
-  <p>Garage: buy cars and upgrades with mission money. Races: follow the yellow
-  rings and beat the par time. Crew: Mara (races) and Dario (muscle) join you
-  as the story goes on.</p>
+<div id="pause-menu" class="overlay" style="display:none">
+  <div class="menu-box">
+    <h2>PAUSED</h2>
+    <button id="btn-resume" class="big-btn">RESUME</button>
+    <button id="btn-save-quit" class="big-btn">SAVE &amp; QUIT TO TITLE</button>
+    <p class="hint">Progress auto-saves with P. Radio: R. Mute: N.</p>
+  </div>
 </div>
 
-<script type="module" src="src/main.js"></script>
+<div id="garage-menu" class="overlay" style="display:none"></div>
+
+<div id="dead-screen" class="overlay" style="display:none">
+  <div class="menu-box">
+    <h2>WASTED</h2>
+    <p>Verde Bay got the better of you this time.</p>
+    <button id="btn-restart" class="big-btn">TRY AGAIN</button>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
