@@ -1,160 +1,112 @@
-// Synthesized sound for VERDE BAY 3D v8 — WebAudio only, no audio files.
-// Engine hum, 3 radio stations, sirens, gunshots, fanfare.
-import { RADIO_STATIONS } from './config.js';
-
-let ctx = null;
-let master = null;
-let radioNodes = null;
-let engineNodes = null;
-let sirenTimer = 0;
-
-export function ensureAudio() {
-  if (ctx) return ctx;
-  try {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain();
-    master.gain.value = 0.5;
-    master.connect(ctx.destination);
-  } catch (e) { ctx = null; }
-  return ctx;
-}
-
-function osc(type, freq, gain, when = 0) {
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = type; o.frequency.value = freq;
-  g.gain.value = gain;
-  o.connect(g); g.connect(master);
-  o.start(ctx.currentTime + when);
-  return { o, g };
-}
-
-function noiseBurst(dur, gain) {
-  const len = Math.floor(ctx.sampleRate * dur);
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  const g = ctx.createGain();
-  g.gain.value = gain;
-  src.connect(g); g.connect(master);
-  src.start();
-}
-
-export function playShot() {
-  if (!ctx) return;
-  noiseBurst(0.12, 0.5);
-  const { o, g } = osc('square', 180, 0.25);
-  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-  o.stop(ctx.currentTime + 0.12);
-}
-
-export function playFanfare() {
-  if (!ctx) return;
-  const notes = [523, 659, 784, 1046];
-  notes.forEach((f, i) => {
-    const { o, g } = osc('triangle', f, 0.3, i * 0.12);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.4);
-    o.stop(ctx.currentTime + i * 0.12 + 0.45);
-  });
-}
-
-export function playPickup() {
-  if (!ctx) return;
-  const { o, g } = osc('sine', 880, 0.25);
-  o.frequency.setValueAtTime(880, ctx.currentTime);
-  o.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
-  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-  o.stop(ctx.currentTime + 0.22);
-}
-
-export function playBusted() {
-  if (!ctx) return;
-  [330, 262, 196].forEach((f, i) => {
-    const { o, g } = osc('sawtooth', f, 0.2, i * 0.18);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.25);
-    o.stop(ctx.currentTime + i * 0.18 + 0.3);
-  });
-}
-
-// Radio: three stations, each a tiny step sequencer on two oscillators.
-const STATION_PATTERNS = [
-  { name: 'Verde FM', wave: 'sine', bpm: 96, bass: [130, 98, 110, 87], lead: [392, 440, 523, 440] },
-  { name: 'Neon Nights', wave: 'sawtooth', bpm: 128, bass: [55, 55, 82, 73], lead: [220, 262, 330, 392] },
-  { name: 'Isla Beats', wave: 'triangle', bpm: 110, bass: [98, 123, 98, 147], lead: [294, 370, 440, 370] },
-];
-
-let radioStep = 0;
-let radioNext = 0;
-let radioStation = -1;
-
-export function setRadioStation(index, on) {
-  if (!ctx) return;
-  stopRadio();
-  if (!on) return;
-  radioStation = index;
-  radioStep = 0;
-  radioNext = ctx.currentTime + 0.05;
-}
-
-export function stopRadio() {
-  if (radioNodes) {
-    for (const n of radioNodes) { try { n.o.stop(); } catch (e) { /* already stopped */ } }
-    radioNodes = null;
+// VERDE BAY v9 — procedural audio: no sound files, everything is synthesized
+// with WebAudio so the game stays offline and self-contained. Engine hum, sirens,
+// gunshots, pickups, UI clicks and three lo-fi radio stations.
+export class AudioSys {
+  constructor() {
+    this.ctx = null;
+    this.master = null;
+    this.engineOsc = null;
+    this.engineGain = null;
+    this.sirenOsc = null;
+    this.sirenGain = null;
+    this.radioOsc = [];
+    this.radioGain = null;
+    this.station = 0;
+    this.muted = false;
+    this.stations = ['BAY FM 88.2', 'VERDE BEATS 101.5', 'HARBOUR JAZZ 94.7'];
   }
-  radioStation = -1;
-}
-
-export function updateRadio() {
-  if (!ctx || radioStation < 0) return;
-  const pat = STATION_PATTERNS[radioStation];
-  const stepDur = 60 / pat.bpm / 2;
-  while (radioNext < ctx.currentTime + 0.15) {
-    const i = radioStep % 8;
-    const bassNote = pat.bass[Math.floor(i / 2) % pat.bass.length];
-    const leadNote = pat.lead[i % pat.lead.length];
-    const b = osc(pat.wave, bassNote, 0.10, radioNext - ctx.currentTime);
-    b.g.gain.exponentialRampToValueAtTime(0.001, radioNext + stepDur * 0.9);
-    b.o.stop(radioNext + stepDur);
-    if (i % 2 === 0) {
-      const l = osc('sine', leadNote, 0.06, radioNext - ctx.currentTime);
-      l.g.gain.exponentialRampToValueAtTime(0.001, radioNext + stepDur * 1.8);
-      l.o.stop(radioNext + stepDur * 2);
+  init() {
+    if (this.ctx) return;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.5;
+      this.master.connect(this.ctx.destination);
+      this.engineOsc = this.ctx.createOscillator();
+      this.engineOsc.type = 'sawtooth';
+      this.engineOsc.frequency.value = 50;
+      this.engineGain = this.ctx.createGain();
+      this.engineGain.gain.value = 0;
+      this.engineOsc.connect(this.engineGain).connect(this.master);
+      this.engineOsc.start();
+      this.sirenOsc = this.ctx.createOscillator();
+      this.sirenOsc.type = 'sine';
+      this.sirenOsc.frequency.value = 700;
+      this.sirenGain = this.ctx.createGain();
+      this.sirenGain.gain.value = 0;
+      this.sirenOsc.connect(this.sirenGain).connect(this.master);
+      this.sirenOsc.start();
+      this.startRadio();
+    } catch (e) { /* audio is optional; the game plays silent */ }
+  }
+  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+  toggleMute() {
+    this.muted = !this.muted;
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+    return this.muted;
+  }
+  setEngine(rpm, on) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.engineGain.gain.setTargetAtTime(on ? 0.03 + rpm * 0.05 : 0, t, 0.1);
+    this.engineOsc.frequency.setTargetAtTime(45 + rpm * 140, t, 0.1);
+  }
+  setSiren(on) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.sirenGain.gain.setTargetAtTime(on ? 0.035 : 0, t, 0.2);
+    if (on) this.sirenOsc.frequency.setTargetAtTime(650 + 250 * Math.sin(t * 2.4), t, 0.1);
+  }
+  blip(freq, dur, type, vol) {
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type || 'square';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol || 0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t + dur);
+  }
+  shot(weaponId) {
+    if (!this.ctx) return;
+    const freq = weaponId === 'shotgun' ? 90 : weaponId === 'lmg' ? 160 : 220;
+    this.blip(freq, 0.14, 'sawtooth', 0.22);
+    this.blip(freq * 0.5, 0.1, 'square', 0.1);
+  }
+  pickup() { this.blip(880, 0.12, 'sine', 0.15); this.blip(1320, 0.18, 'sine', 0.12); }
+  click() { this.blip(660, 0.06, 'square', 0.08); }
+  fanfare() {
+    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.blip(f, 0.22, 'triangle', 0.16), i * 110));
+  }
+  crash() { this.blip(70, 0.3, 'sawtooth', 0.25); }
+  nextStation() {
+    this.station = (this.station + 1) % this.stations.length;
+    this.startRadio();
+    return this.stations[this.station];
+  }
+  stationName() { return this.stations[this.station]; }
+  startRadio() {
+    if (!this.ctx) return;
+    this.radioOsc.forEach((o) => { try { o.stop(); } catch (e) { /* already stopped */ } });
+    this.radioOsc = [];
+    if (!this.radioGain) {
+      this.radioGain = this.ctx.createGain();
+      this.radioGain.gain.value = 0.035;
+      this.radioGain.connect(this.master);
     }
-    radioNodes = [b, ...(radioNodes || [])].slice(0, 4);
-    radioStep += 1;
-    radioNext += stepDur;
+    const roots = [110, 98, 130.8];
+    const root = roots[this.station];
+    [1, 1.5, 2].forEach((mult, i) => {
+      const o = this.ctx.createOscillator();
+      o.type = i === 2 ? 'triangle' : 'sine';
+      o.frequency.value = root * mult;
+      o.detune.value = (i - 1) * 4;
+      o.connect(this.radioGain);
+      o.start();
+      this.radioOsc.push(o);
+    });
   }
 }
-
-export function updateEngine(speed, maxSpeed, on) {
-  if (!ctx) return;
-  if (!on || maxSpeed <= 0) {
-    if (engineNodes) { try { engineNodes.o.stop(); } catch (e) { /* ignore */ } engineNodes = null; }
-    return;
-  }
-  if (!engineNodes) {
-    engineNodes = osc('sawtooth', 60, 0.05);
-  }
-  const f = 55 + (speed / maxSpeed) * 130;
-  engineNodes.o.frequency.setTargetAtTime(f, ctx.currentTime, 0.08);
-  engineNodes.g.gain.setTargetAtTime(0.03 + (speed / maxSpeed) * 0.05, ctx.currentTime, 0.1);
-}
-
-export function updateSiren(dt, wantedLevel) {
-  if (!ctx) return;
-  sirenTimer += dt;
-  if (wantedLevel <= 0) return;
-  if (sirenTimer > 0.9) {
-    sirenTimer = 0;
-    const f = wantedLevel >= 3 ? 950 : 750;
-    const { o, g } = osc('sine', f, 0.07);
-    o.frequency.setValueAtTime(f, ctx.currentTime);
-    o.frequency.linearRampToValueAtTime(f * 0.75, ctx.currentTime + 0.4);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-    o.stop(ctx.currentTime + 0.5);
-  }
-}
-
-export function stationName(i) { return RADIO_STATIONS[i] || 'Off'; }

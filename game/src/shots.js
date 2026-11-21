@@ -1,57 +1,70 @@
-// Screenshot director for VERDE BAY 3D v8. Reads ?shot=start|drive|chase|mission
-// and stages a deterministic scene for the Playwright shots script, then sets
-// window.__ready once the first frames have rendered.
-import { createGame, startMission, commitCrime, makeCar } from './sim.js';
+// VERDE BAY v9 — screenshot scenes: the `?shot=` query parameter poses the
+// game for the entry's screenshots (and for the maker's own play-tests).
+//   ?shot=start   title screen over the city at dawn
+//   ?shot=drive   the player driving a Vesper GT down the marina road
+//   ?shot=chase   a 3-star chase with police cars and the minimap lit up
+//   ?shot=garage  the Verde Garage shop panel open, player on foot outside
+// Each scene is the real game, not a mock: the same code path a player takes.
+export function shotKind() {
+  const q = new URLSearchParams(window.location.search);
+  return q.get('shot') || null;
+}
 
-export function setupShot(S, mode) {
-  S.shotMode = mode;
-  const p = S.player;
-  if (mode === 'start') {
-    S.flags.menu = true;
-    S.flags.started = false;
-    p.x = 1150; p.y = 850; p.angle = Math.PI / 4;
-    return;
+export function applyShot(sim, hud, kind) {
+  if (!kind) return false;
+  const startGame = () => {
+    hud.hideStart();
+    sim.audio.init();
+    sim.audio.resume();
+  };
+  if (kind === 'start') {
+    sim.timeOfDay = 7.2; // dawn light over the bay
+    return true;
   }
-  S.flags.menu = false;
-  S.flags.started = true;
-  S.time = 1;
-  if (mode === 'drive') {
-    const car = makeCar('sport', 1050, 750, 0, '#d7263d', 'player');
-    S.cars.push(car);
-    p.car = car; p.onFoot = false;
-    p.x = 1050; p.y = 750; p.angle = 0;
-    car.speed = 120;
-    return;
+  if (kind === 'drive') {
+    startGame();
+    sim.timeOfDay = 10.5;
+    const car = sim.garage.spawnActiveCar(sim.scene, sim.vehicleClass);
+    // On the x=-180 road, heading +Z: a long clear run down the marina road
+    // with the towers on both sides, not into a building.
+    car.x = -180; car.z = -170;
+    car.heading = 0;
+    sim.vehicles.push(car);
+    sim.enterVehicle(car);
+    car.speed = 18;
+    sim.say('Verde Bay — 12 missions, a garage, races and a crew. Drive!');
+    return true;
   }
-  if (mode === 'chase') {
-    // Wanted 3 chase with the helicopter IN FRAME: heli ahead of the player,
-    // low orbit, searchlight on. The render frames the camera up toward it.
-    const car = makeCar('sport', 1050, 750, 0, '#d7263d', 'player');
-    S.cars.push(car);
-    p.car = car; p.onFoot = false;
-    p.x = 1050; p.y = 750; p.angle = 0;
-    p.cash = 12450;
-    car.speed = 170;
-    commitCrime(S, 3);
-    // Park the helicopter ahead of the car, low and big in the frame.
-    if (S.heli) {
-      S.heli.angle = 0; // straight ahead on the +x axis from the player
-      S.heli.orbitR = 90;
-      S.heli.z = 30;
-      S.heli.x = p.x + 90;
-      S.heli.y = p.y + 10;
-    }
-    return;
+  if (kind === 'chase') {
+    startGame();
+    sim.timeOfDay = 16.5;
+    const car = sim.garage.spawnActiveCar(sim.scene, sim.vehicleClass);
+    car.x = 0; car.z = -60;
+    car.heading = 0;
+    sim.vehicles.push(car);
+    sim.enterVehicle(car);
+    car.speed = 22;
+    sim.setWantedStars(3);
+    sim.say('3 stars — the VCPD is on you. NOS is Shift.');
+    return true;
   }
-  if (mode === 'mission') {
-    // Mission 11, Neon Crown, at night on The Strip: race + shootout.
-    const car = makeCar('sport', 2050, 1500, Math.PI / 2, '#d7263d', 'player');
-    S.cars.push(car);
-    p.car = car; p.onFoot = false;
-    p.x = 2050; p.y = 1500; p.angle = Math.PI / 2;
-    p.cash = 18200;
-    car.speed = 60;
-    startMission(S, 10);
-    return;
+  if (kind === 'garage') {
+    startGame();
+    sim.timeOfDay = 12.0;
+    sim.money = 12500;
+    sim.player.x = -40;
+    sim.player.z = 118;
+    sim.player.mesh.position.set(-40, 0, 118);
+    sim.player.heading = Math.PI;
+    sim.garage.open = true;
+    hud.openGarage();
+    sim.say('Verde Garage — buy cars, tune them, keep them.');
+    return true;
   }
+  if (kind === 'mission') {
+    startGame();
+    sim.missions.start();
+    return true;
+  }
+  return false;
 }

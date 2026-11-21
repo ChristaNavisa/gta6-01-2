@@ -1,168 +1,239 @@
-// VERDE BAY 3D v8 — the island city: districts, buildings, palms, roads, places.
-// Pure data + seeded RNG: no DOM, no THREE, so the Node smoke test can import it.
-import { DISTRICTS, PACKAGE_COUNT } from './config.js';
-import { mulberry32, pick } from './util.js';
+// VERDE BAY v9 — the city itself: a sun-soaked island grid of blocks, roads,
+// towers with lit windows, palms, streetlights, the garage, shops and the
+// safehouse. Everything is procedural and deterministic (seed 1337), so the
+// city is identical on every load and every machine.
+import { WORLD, DISTRICTS } from './config.js';
+import { mulberry32, randInt } from './util.js';
 
-const ROAD_X = [150, 450, 750, 1050, 1350, 1650, 1950, 2250, 2550, 2850, 3150];
-const ROAD_Y = [150, 450, 750, 1050, 1350, 1650, 1950];
-const ROAD_HALF = 46;
+const THREE = window.THREE;
 
-export const PLACES = {
-  garage: { x: 1150, y: 850, name: 'Verde Garage' },
-  stadium: { x: 1000, y: 350, name: 'Verde Stadium' },
-  taxi: { x: 1200, y: 900, name: 'Taxi Rank' },
-  dock: { x: 2100, y: 1800, name: 'Dockside' },
-  warehouse: { x: 2200, y: 1000, name: 'Old Warehouse' },
-  ferry: { x: 2250, y: 1880, name: 'Ferry Terminal' },
-  bank: { x: 1050, y: 750, name: 'Verde Bank' },
-  marina: { x: 2150, y: 1830, name: 'Marina del Sol' },
-  casino: { x: 2100, y: 1550, name: 'Neon Crown Casino' },
-  strip: { x: 2150, y: 1500, name: 'The Strip' },
-  boat: { x: 3050, y: 1100, name: 'Isla Verde Dock' },
-  port: { x: 2000, y: 1900, name: 'Port Verde' },
-  cannery: { x: 2000, y: 1130, name: 'Old Cannery' },
-  safehouse: { x: 900, y: 400, name: 'Safehouse Garage' },
-  shop: { x: 1250, y: 950, name: 'Verde Arms' },
-  hospital: { x: 350, y: 600, name: 'Verde General' },
-  beach: { x: 1300, y: 1650, name: 'Palma Beach' },
-};
-
-const DISTRICT_ORDER = ['water', 'residential', 'downtown', 'oldtown', 'beach', 'industrial', 'strip', 'marina', 'isla'];
-
-export function districtAt(x, y) {
-  for (const id of DISTRICT_ORDER) {
-    const d = DISTRICTS[id];
-    if (x >= d.x0 && x < d.x1 && y >= d.y0 && y < d.y1) return id;
-  }
-  return 'downtown';
-}
-
-const PLACE_NAMES = [
-  { key: 'ferry', name: 'Ferry Terminal' },
-  { key: 'marina', name: 'Marina del Sol' },
-  { key: 'cannery', name: 'Old Cannery' },
+// Spots that must stay clear of buildings: mission markers, garage, shops.
+const CLEAR_SPOTS = [
+  [-40, 140], [-150, -150], [0, -60], [150, 60], [-120, 140], [120, -140],
+  [20, -100], [-40, -100], [60, -20], [0, 60], [100, -120], [140, -160],
+  [80, -90], [0, 10], [-90, 120], [90, 120], [-150, 60], [150, -60],
 ];
+const CLEAR_R = 14;
 
-export function districtNameAt(x, y) {
-  for (const p of PLACE_NAMES) {
-    const pl = PLACES[p.key];
-    const dx = x - pl.x, dy = y - pl.y;
-    if (dx * dx + dy * dy < 90 * 90) return p.name;
+function facadeTexture(base, lit) {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = base;
+  g.fillRect(0, 0, 128, 256);
+  const rng = mulberry32(base.length * 7919 + lit * 131);
+  for (let y = 8; y < 248; y += 16) {
+    for (let x = 8; x < 120; x += 14) {
+      const on = rng() < lit;
+      g.fillStyle = on ? '#ffd98a' : '#1d2b3a';
+      g.fillRect(x, y, 9, 11);
+    }
   }
-  return DISTRICTS[districtAt(x, y)].name;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
-function onRoad(x, y) {
-  for (const rx of ROAD_X) if (Math.abs(x - rx) < ROAD_HALF + 30) return true;
-  for (const ry of ROAD_Y) if (Math.abs(y - ry) < ROAD_HALF + 30) return true;
-  return false;
-}
+export function buildCity(scene) {
+  const rng = mulberry32(1337);
+  const group = new THREE.Group();
+  group.name = 'city';
+  scene.add(group);
+  const colliders = [];
+  const pitch = WORLD.blockSize + WORLD.roadWidth; // 60
+  const half = (WORLD.blocks * pitch) / 2; // 210
 
-const BEACH_ROOFS = ['#f4a261', '#e9c46a', '#f7ede2', '#ee9b7a'];
-const CITY_ROOFS = ['#5b6b7a', '#7a6b5b', '#4a5b6b', '#8a7a6b', '#6b7a5b'];
+  // Ground: island slab, then water around it.
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD.groundSize, WORLD.groundSize),
+    new THREE.MeshLambertMaterial({ color: 0x9a8f7a }),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  group.add(ground);
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(1400, 1400),
+    new THREE.MeshLambertMaterial({ color: 0x2f7fb8 }),
+  );
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = WORLD.waterLevel;
+  group.add(water);
+  const sand = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD.groundSize + 26, WORLD.groundSize + 26),
+    new THREE.MeshLambertMaterial({ color: 0xd9c28a }),
+  );
+  sand.rotation.x = -Math.PI / 2;
+  sand.position.y = -0.15;
+  group.add(sand);
 
-export function generateCity(seed) {
-  const rng = mulberry32(seed * 7919 + 13);
-  const buildings = [];
-  const addBuilding = (district, x, y, w, d, floors, roof, opts = {}) => {
-    buildings.push({
-      x, y, w, d, floors,
-      height: floors * 14 + 6,
-      roof, district,
-      neon: !!opts.neon,
-      stack: !!opts.stack,
-      color: opts.color || '#9aa5b1',
-    });
-  };
-
-  // Downtown towers.
-  for (let i = 0; i < 16; i++) {
-    const x = 850 + rng() * 500, y = 650 + rng() * 400;
-    if (onRoad(x, y)) continue;
-    addBuilding('downtown', x, y, 60 + rng() * 50, 60 + rng() * 50,
-      4 + Math.floor(rng() * 7), pick(rng, CITY_ROOFS));
+  // Roads: dark strips along every grid line, plus centre dashes.
+  const roadMat = new THREE.MeshLambertMaterial({ color: 0x2e3138 });
+  const dashMat = new THREE.MeshBasicMaterial({ color: 0xd8c95a });
+  for (let k = -3; k <= 3; k++) {
+    const c = k * pitch;
+    const vRoad = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.roadWidth, WORLD.groundSize), roadMat);
+    vRoad.rotation.x = -Math.PI / 2;
+    vRoad.position.set(c, 0.02, 0);
+    vRoad.receiveShadow = true;
+    group.add(vRoad);
+    const hRoad = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.groundSize, WORLD.roadWidth), roadMat);
+    hRoad.rotation.x = -Math.PI / 2;
+    hRoad.position.set(0, 0.02, c);
+    hRoad.receiveShadow = true;
+    group.add(hRoad);
+    for (let d = -200; d <= 200; d += 16) {
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 4), dashMat);
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(c, 0.04, d);
+      group.add(dash);
+    }
   }
-  // Industrial: single-storey warehouses, some with smokestacks. Placed on fixed
-  // spots clear of the roads (x=1950/2250, y=1050) so the district is never empty.
-  const indSpots = [
-    [2080, 880], [2160, 1180], [2380, 880], [2440, 1180], [2100, 1250], [2400, 950],
+
+  // Buildings: one tower per block, heights and colours vary by district.
+  const facades = [
+    facadeTexture('#8a7f74', 0.55),
+    facadeTexture('#6f7d8c', 0.45),
+    facadeTexture('#a08a6a', 0.6),
+    facadeTexture('#7a6a8c', 0.4),
   ];
-  indSpots.forEach(([x, y], i) => {
-    addBuilding('industrial', x, y, 110 + (i % 3) * 20, 80 + (i % 2) * 20, 1,
-      pick(rng, ['#7a7a7a', '#8a6a5a', '#6a7a6a']),
-      { stack: i % 2 === 0, color: '#8a8078' });
-  });
-  // Beachfront: low pastel blocks.
-  for (let i = 0; i < 10; i++) {
-    const x = 950 + rng() * 650, y = 1550 + rng() * 400;
-    if (onRoad(x, y)) continue;
-    addBuilding('beach', x, y, 55 + rng() * 40, 55 + rng() * 40,
-      1 + Math.floor(rng() * 2), pick(rng, BEACH_ROOFS));
-  }
-  // Old Town: low brick.
-  for (let i = 0; i < 9; i++) {
-    const x = 80 + rng() * 460, y = 450 + rng() * 500;
-    if (onRoad(x, y)) continue;
-    addBuilding('oldtown', x, y, 50 + rng() * 40, 50 + rng() * 40,
-      1 + Math.floor(rng() * 2), pick(rng, ['#a05a4a', '#b07a5a', '#8a5a4a']),
-      { color: '#a06a5a' });
-  }
-  // Residential: small houses.
-  for (let i = 0; i < 12; i++) {
-    const x = 850 + rng() * 500, y = 60 + rng() * 480;
-    if (onRoad(x, y)) continue;
-    addBuilding('residential', x, y, 40 + rng() * 30, 40 + rng() * 30,
-      1 + Math.floor(rng() * 2), pick(rng, ['#c96a5a', '#5a8a6a', '#6a7ab0', '#d0a05a']));
-  }
-  // The Strip: neon towers. Fixed spots clear of the roads (x=1950/2250, y=1650).
-  const stripSpots = [
-    [2070, 1480], [2160, 1560], [2340, 1480], [2360, 1560], [2100, 1730], [2350, 1730],
-  ];
-  stripSpots.forEach(([x, y], i) => {
-    addBuilding('strip', x, y, 55 + (i % 3) * 20, 55 + (i % 2) * 20,
-      3 + (i % 5), pick(rng, ['#ff2d78', '#22d3ee', '#facc15', '#a855f7']),
-      { neon: i % 2 === 0, color: '#2a2a3a' });
-  });
-  // Marina: low white blocks.
-  for (let i = 0; i < 6; i++) {
-    const x = 1950 + rng() * 400, y = 1780 + rng() * 220;
-    if (onRoad(x, y)) continue;
-    addBuilding('marina', x, y, 50 + rng() * 40, 50 + rng() * 40,
-      1 + Math.floor(rng() * 2), pick(rng, ['#f7f7f7', '#dbeafe', '#fef3c7']));
-  }
-  // Isla Verde: villas.
-  for (let i = 0; i < 7; i++) {
-    const x = 2950 + rng() * 350, y = 950 + rng() * 400;
-    if (onRoad(x, y)) continue;
-    addBuilding('isla', x, y, 45 + rng() * 35, 45 + rng() * 35,
-      1 + Math.floor(rng() * 2), pick(rng, ['#f4a261', '#e9c46a', '#ffffff']));
+  const roofMat = new THREE.MeshLambertMaterial({ color: 0x3a3f46 });
+  const isClear = (x, z) => CLEAR_SPOTS.some(([cx, cz]) => Math.hypot(x - cx, z - cz) < CLEAR_R);
+  for (let bi = -3; bi <= 2; bi++) {
+    for (let bj = -3; bj <= 2; bj++) {
+      const cx = bi * pitch + pitch / 2;
+      const cz = bj * pitch + pitch / 2;
+      if (isClear(cx, cz)) continue; // park / plaza instead of a tower
+      const w = 20 + rng() * 14;
+      const d = 20 + rng() * 14;
+      const h = 10 + rng() * rng() * 34;
+      const tex = facades[randInt(0, facades.length - 1)];
+      const mat = new THREE.MeshLambertMaterial({ map: tex });
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      tower.position.set(cx + (rng() - 0.5) * 4, h / 2, cz + (rng() - 0.5) * 4);
+      tower.castShadow = true;
+      tower.receiveShadow = true;
+      group.add(tower);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 0.5, 1.2, d * 0.5), roofMat);
+      roof.position.set(tower.position.x, h + 0.6, tower.position.z);
+      group.add(roof);
+      colliders.push({
+        minX: tower.position.x - w / 2, maxX: tower.position.x + w / 2,
+        minZ: tower.position.z - d / 2, maxZ: tower.position.z + d / 2,
+      });
+      // A few blocks get a second low building.
+      if (rng() < 0.4) {
+        const w2 = 12 + rng() * 8;
+        const d2 = 12 + rng() * 8;
+        const h2 = 5 + rng() * 6;
+        const low = new THREE.Mesh(new THREE.BoxGeometry(w2, h2, d2), mat);
+        low.position.set(cx + (rng() - 0.5) * 18, h2 / 2, cz + (rng() - 0.5) * 18);
+        low.castShadow = true;
+        group.add(low);
+        colliders.push({
+          minX: low.position.x - w2 / 2, maxX: low.position.x + w2 / 2,
+          minZ: low.position.z - d2 / 2, maxZ: low.position.z + d2 / 2,
+        });
+      }
+    }
   }
 
-  // Palms: a dozen on the beach, a few downtown.
+  // District signs: tall coloured pillars at each district centre.
+  for (const dist of DISTRICTS) {
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.2, 1.2, 16, 8),
+      new THREE.MeshLambertMaterial({ color: dist.color, emissive: dist.color, emissiveIntensity: 0.25 }),
+    );
+    pillar.position.set(dist.center[0], 8, dist.center[1]);
+    group.add(pillar);
+  }
+
+  // The Verde Garage: a wide low workshop with a yellow roof at (-40, 140).
+  const garageMat = new THREE.MeshLambertMaterial({ color: 0xd8b13c });
+  const garage = new THREE.Mesh(new THREE.BoxGeometry(30, 8, 18), garageMat);
+  garage.position.set(-40, 4, 140);
+  garage.castShadow = true;
+  group.add(garage);
+  const garageDoor = new THREE.Mesh(
+    new THREE.BoxGeometry(20, 5.5, 0.6),
+    new THREE.MeshLambertMaterial({ color: 0x2a2d33 }),
+  );
+  garageDoor.position.set(-40, 2.8, 130.8);
+  group.add(garageDoor);
+  colliders.push({ minX: -55, maxX: -25, minZ: 131, maxZ: 149 });
+
+  // Shops: small storefronts with awnings.
+  const shopPositions = [[-20, -100], [40, 40], [120, 100], [-100, -40]];
+  const awningColors = [0xc23b2e, 0x2fa8a0, 0xc9a227, 0x4a7ec2];
+  shopPositions.forEach(([x, z], i) => {
+    const shop = new THREE.Mesh(new THREE.BoxGeometry(12, 6, 8), new THREE.MeshLambertMaterial({ color: 0xe8e0d0 }));
+    shop.position.set(x, 3, z);
+    shop.castShadow = true;
+    group.add(shop);
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(13, 0.6, 4), new THREE.MeshLambertMaterial({ color: awningColors[i] }));
+    awning.position.set(x, 5.4, z - 4.5);
+    group.add(awning);
+    colliders.push({ minX: x - 6, maxX: x + 6, minZ: z - 4, maxZ: z + 4 });
+  });
+
+  // Safehouse: a small house with a blue roof at (60, 140).
+  const safehouse = new THREE.Mesh(new THREE.BoxGeometry(12, 6, 10), new THREE.MeshLambertMaterial({ color: 0xf0e6d2 }));
+  safehouse.position.set(60, 3, 140);
+  safehouse.castShadow = true;
+  group.add(safehouse);
+  const safeRoof = new THREE.Mesh(new THREE.ConeGeometry(9, 4, 4), new THREE.MeshLambertMaterial({ color: 0x3f6fb5 }));
+  safeRoof.position.set(60, 8, 140);
+  safeRoof.rotation.y = Math.PI / 4;
+  group.add(safeRoof);
+  colliders.push({ minX: 54, maxX: 66, minZ: 135, maxZ: 145 });
+
+  // Palms along the marina and plaza trees in the park block.
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2a });
+  const leafMat = new THREE.MeshLambertMaterial({ color: 0x3f8f4f });
   const palms = [];
-  for (let i = 0; i < 12; i++) {
-    palms.push({ x: 950 + rng() * 700, y: 1560 + rng() * 380, h: 26 + rng() * 10 });
-  }
-  for (let i = 0; i < 4; i++) {
-    palms.push({ x: 850 + rng() * 500, y: 650 + rng() * 400, h: 22 + rng() * 8 });
+  for (let i = 0; i < 26; i++) {
+    const x = -190 + rng() * 380;
+    const z = rng() < 0.5 ? -195 + rng() * 12 : 183 + rng() * 12;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 7, 6), trunkMat);
+    trunk.position.set(x, 3.5, z);
+    group.add(trunk);
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(3.2, 4, 6), leafMat);
+    leaves.position.set(x, 8.5, z);
+    group.add(leaves);
+    palms.push({ x, z });
   }
 
-  // Roads: grid segments clipped to the world.
-  const roads = [];
-  for (const ry of ROAD_Y) roads.push({ x0: 0, y0: ry, x1: 2600, y1: ry });
-  for (const ry of ROAD_Y) if (ry >= 950 && ry <= 1350) roads.push({ x0: 2600, y0: ry, x1: 3400, y1: ry });
-  for (const rx of ROAD_X) roads.push({ x0: rx, y0: 0, x1: rx, y1: 2100 });
-
-  // Ten hidden packages, spread across the districts, on land.
-  const pkgSpots = [
-    [900, 200], [1300, 500], [400, 800], [1000, 1000], [1400, 1400],
-    [2100, 900], [2300, 1600], [2000, 1950], [3100, 1000], [3200, 1300],
-  ];
-  const packages = pkgSpots.map(([x, y], i) => ({ id: i, x, y, found: false }));
+  // Streetlights at every intersection; their bulbs glow at night.
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0x22242a });
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+  const bulbs = [];
+  for (let k = -3; k <= 3; k++) {
+    for (let m = -3; m <= 3; m++) {
+      const x = k * pitch + 8;
+      const z = m * pitch + 8;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 7, 6), poleMat);
+      pole.position.set(x, 3.5, z);
+      group.add(pole);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), bulbMat.clone());
+      bulb.position.set(x, 7.2, z);
+      group.add(bulb);
+      bulbs.push(bulb);
+    }
+  }
 
   return {
-    seed, buildings, palms, roads,
-    places: PLACES, packages,
-    bounds: { w: 3400, h: 2100 },
+    group,
+    colliders,
+    garagePos: { x: -40, z: 130 },
+    shopPositions,
+    safehousePos: { x: 60, z: 140 },
+    spawnPos: { x: 0, z: 10 },
+    roadLines: [-180, -120, -60, 0, 60, 120, 180],
+    half,
+    // Night falls: streetlight bulbs brighten, facades stay lit.
+    updateNight(isNight) {
+      const target = isNight ? 1 : 0.15;
+      for (const b of bulbs) b.material.color.setHex(isNight ? 0xffe9a8 : 0x8a8a7a);
+      void target;
+    },
   };
 }

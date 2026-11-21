@@ -3,54 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VERDE BAY — an open-world crime game</title>
 <link rel="icon" href="data:,">
-<title>VERDE BAY 3D — v8</title>
 <link rel="stylesheet" href="css/style.css">
+<script src="vendor/three.min.js"></script>
 </head>
 <body>
-<canvas id="game" width="1280" height="800"></canvas>
+<canvas id="game"></canvas>
 
-<div id="hud">
-  <div id="hud-top-left">
-    <div id="hud-cash">$0</div>
-    <div id="hud-health">HP 100</div>
-    <div id="hud-armor"></div>
+<div id="start-screen">
+  <h1 id="game-title">VERDE BAY</h1>
+  <p class="tagline">An open-world crime game — 12 missions, a garage, street races, a crew.</p>
+  <p class="story">You are Alex Vane, fresh out of the Marina lockup with $500 and a stolen
+  hatchback. Rico has work. Mara has races. Dario has a crew. The city has
+  everything you need — if you can take it.</p>
+  <div class="start-buttons">
+    <button id="start-btn">PLAY — CONTINUE</button>
+    <button id="new-btn">NEW GAME</button>
   </div>
-  <div id="hud-top-right">
-    <div id="hud-stars">☆☆☆☆☆</div>
-    <div id="hud-heli"></div>
-    <div id="hud-district">Downtown</div>
-    <div id="hud-clock">08:24 ☀️ DAY</div>
+  <div class="controls">
+    <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Shift</b> run / NOS boost &nbsp;·&nbsp;
+    <b>E</b> enter car · garage · shop &nbsp;·&nbsp; <b>Mouse</b> shoot<br>
+    <b>Q</b> weapon wheel &nbsp;·&nbsp; <b>1–5</b> weapons &nbsp;·&nbsp; <b>M</b> next mission<br>
+    <b>R</b> radio &nbsp;·&nbsp; <b>F</b> save &nbsp;·&nbsp; <b>Esc</b> pause &nbsp;·&nbsp; <b>H</b> help
   </div>
-  <div id="hud-objective"></div>
-  <div id="hud-weapons"></div>
-  <div id="hud-radio"></div>
-  <div id="hud-prompt"></div>
-  <div id="hud-fanfare"></div>
-  <canvas id="minimap" width="220" height="140"></canvas>
+  <p class="systems">GARAGE · NOS · MINIMAP · CARJACKING · STREET RACES · CREW &amp; RESPECT ·
+  WEAPON WHEEL · 5-STAR WANTED · DAY / NIGHT · SAVE</p>
 </div>
 
-<div id="shop">
-  <h2>VERDE ARMS</h2>
-  <div id="shop-list"></div>
-  <button id="shop-close">CLOSE (E)</button>
-</div>
-
-<div id="menu">
-  <h1>VERDE BAY 3D</h1>
-  <div class="menu-sub">Twelve missions. $48,000 of story cash.</div>
-  <div class="menu-sub">An open-world crime game — drive, fight, escape the law.</div>
-  <div class="menu-controls">
-    <div>WASD — drive / walk &nbsp;·&nbsp; Shift — nitro / run</div>
-    <div>Mouse — aim &nbsp;·&nbsp; Click / F — shoot &nbsp;·&nbsp; R — reload</div>
-    <div>1 / 2 / 3 — Pistol / SMG / Scattergun &nbsp;·&nbsp; C — radio</div>
-    <div>E — enter car / shop / safehouse &nbsp;·&nbsp; M — next mission &nbsp;·&nbsp; Esc — pause</div>
+<div id="hud" style="display:none">
+  <div id="top-left">
+    <div id="stars" class="stars">☆☆☆☆☆</div>
+    <div id="money">$500</div>
+    <div id="respect">RESPECT 0/100</div>
+    <div id="district">MARINA</div>
+    <div id="clock">DAY 1 09:30</div>
   </div>
-  <div class="menu-go">Press ENTER to start</div>
-  <div class="menu-foot">Verde Arms sells the VK-9 SMG ($1,500) and M12 Scattergun ($2,500). The Safehouse Garage saves your game and heals you. At 5 stars the military joins the chase.</div>
+  <div id="top-right">
+    <canvas id="minimap" width="168" height="168"></canvas>
+    <div id="objective"></div>
+    <div id="race"></div>
+  </div>
+  <div id="bottom-left">
+    <div id="health">HP 100</div>
+    <div id="weapon">P9 Pistol</div>
+    <div id="speed"></div>
+    <div id="nos"><div id="nos-fill"></div><span>NOS — SHIFT</span></div>
+  </div>
+  <div id="bottom-center">
+    <div id="mission"></div>
+    <div id="message"></div>
+  </div>
+  <div id="wheel" style="display:none"></div>
+  <div id="garage" style="display:none"></div>
+  <div id="menu"></div>
 </div>
 
-<script src="vendor/three.min.js"></script>
+<div id="help" style="display:none">
+  <h2>HOW TO PLAY</h2>
+  <p><b>WASD / arrows</b> — walk or drive. <b>Shift</b> — run on foot, NOS boost in a car.</p>
+  <p><b>E</b> — steal / enter a car, get out, open the garage or a shop.</p>
+  <p><b>Mouse click</b> — shoot (on foot). <b>Q</b> (hold) or <b>1–5</b> — weapon wheel.</p>
+  <p><b>M</b> — start the next story mission. <b>R</b> — change radio station.</p>
+  <p><b>F</b> — save. <b>Esc</b> — pause. Missions pay money and respect; respect
+  unlocks a shop discount, a free Vesper GT, stronger crew and gold paint.</p>
+  <p>Garage: buy cars and upgrades with mission money. Races: follow the yellow
+  rings and beat the par time. Crew: Mara (races) and Dario (muscle) join you
+  as the story goes on.</p>
+</div>
+
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

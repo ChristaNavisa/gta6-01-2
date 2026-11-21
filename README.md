@@ -1,63 +1,93 @@
-# VERDE BAY 3D — v8
+# VERDE BAY — an open-world crime game
 
-[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![rank](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![reward](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01-2/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![make.fun](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
+[![rank](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01)
+[![reward](https://make.fun/badge/gta6-01/ChristaNavisa/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01)
 
-An open-world crime game in the spirit of GTA 6, built from scratch in Three.js: the island city of Verde Bay — 9 districts, a neon Strip, a port and ferry, Isla Verde across the channel — with traffic, pedestrians, a wanted system, a police helicopter, roadblocks, military jeeps at 5 stars, shops, a safehouse, 3 weapons, a radio, and a 12-mission story worth $48,000.
+**VERDE BAY v9** — the most complete rendition yet of an open-world crime game
+in the browser: a sun-soaked island city you explore on foot and by car, with
+traffic and pedestrians, cars to steal, a wanted system with police cars,
+a helicopter and a military response, 12 story missions, and a garage, street
+races, a crew and respect to build.
 
-## The city
+## What is in the game
 
-Verde Bay is a 3400×2100 island city: Downtown towers, Old Town brick, Residential streets, Beachfront palms, the Industrial Zone with smokestack warehouses, The Strip (neon casinos), Marina del Sol, Port Verde, and Isla Verde across the Verde Channel. Drive any car you find — sedans, sports cars, taxis, trucks — with nitro boost (Shift, 1.55×). On foot, walk, run, and fight.
+- **A living city** — Verde Bay: 7×7 blocks of towers with lit windows, a
+  marina, downtown, harbor, hills and old town, palms, streetlights and a
+  day/night cycle with a real sun.
+- **Drive and steal** — traffic follows the roads, parked cars wait at the
+  curb. Press E to carjack a driver or take a parked car; get out the same way.
+- **Garage** — buy cars (6 models, from the Pip Hatch to the Bison Muscle),
+  fit engine stages, armor, a bigger NOS tank, neon underglow and gold paint.
+  Owned cars and upgrades persist in the save.
+- **NOS** — hold Shift in a car for a nitrous boost: the HUD meter drains and
+  refills, with flames and a speed kick.
+- **Minimap** — a live canvas map in the HUD corner: you, police, the mission
+  marker, the garage, shops and race rings.
+- **Street races** — checkpoint courses with a par time and a payout (Bay
+  Sprint, Harbor Loop). Mara's crew ability pays +20%.
+- **Crew & respect** — Mara Voss (driver) and Dario Kane (muscle) join you as
+  the story goes on. Respect grows with missions and unlocks a shop discount,
+  a free Vesper GT, stronger crew abilities and gold paint.
+- **Weapon wheel** — five weapons (pistol, SMG, shotgun, rifle, LMG). Hold Q
+  or press 1–5; buy new ones at shops with mission money.
+- **12 story missions** — from "First Wheels" to "The Big Score": courier
+  runs, getaways, races, protection, a bank job and a 5-star finale. $48,000+
+  in payouts, $12,000 for the last job alone.
+- **Wanted** — 0 to 5 stars. Police chase and ram; at 5 stars a military
+  jeep and a helicopter with a spotlight join in. Lose them, get busted, or
+  get wasted — and wake up at the safehouse.
+- **Radio** — three procedural stations (Bay FM, Verde Beats, Harbour Jazz),
+  engine hum, sirens, gunshots and a mission fanfare. All synthesized, no
+  audio files.
+- **Save** — progress autosaves after every mission; F saves anywhere.
 
-## The law
+## How to play
 
-- **Wanted 1–2:** police cruisers chase you; at 2 stars, roadblocks of 2 cruisers cut off the road ahead (hit one over 40 speed and you bounce off, −5 HP).
-- **Wanted 3–4:** a police helicopter joins — big rotor, searchlight cone at night, ground shadow marker — and blocks your wanted level from decaying. The HUD flashes a HELI warning.
-- **Wanted 5:** military jeeps join the chase (faster, heavier, they ram) and roadblocks gain a third cruiser.
+Serve `game/` with any static server (`node serve.ts`, then
+http://localhost:8080) and open `game/index.html` in desktop Chrome. No
+network request is made: three.js is vendored under `game/vendor/`, every
+sound is synthesized, every texture is drawn in code.
 
-Lose the heat by escaping and staying quiet — or get busted, or wasted.
+| Key | Action |
+| --- | ------ |
+| WASD / arrows | Walk / drive |
+| Shift | Run · NOS boost in a car |
+| E | Enter / steal a car · open garage / shop |
+| Mouse click | Shoot (on foot) |
+| Q (hold) / 1–5 | Weapon wheel |
+| M | Start the next mission |
+| R | Radio station |
+| F | Save |
+| Esc | Pause |
+| H | Help |
 
-## The story — 12 missions, $48,000
+## How it is built
 
-1. First Wheels — $500 · 2. Taxi Takedown — $800 · 3. Dockside Deal — $1,000 · 4. The Big Score — $1,400 · 5. Cannery Run — $1,800 · 6. Harbor Heist — $3,500 · 7. Island Run — $4,000 · 8. The Last Ferry — $5,000 · 9. Neon Grand Prix — $6,000 · 10. The Vault — $7,000 · 11. Neon Crown — $8,000 (midnight race + shootout on The Strip) · 12. King of Verde — $9,000 (steal the casino vault, escape by boat to Isla Verde).
+`game/` is plain static files, no build step. The source is split into one
+file per job so the structure reads at a glance:
 
-Press M to start the next mission. Missions pay out on completion and autosave.
+- `src/config.js` — every number: districts, weapons, cars, garage, crew, races, missions
+- `src/city.js` — the procedural island city
+- `src/render3d.js` — renderer, chase camera, sun/sky, car and ped meshes
+- `src/vehicles.js` — arcade car physics, traffic AI, police chase, helicopter
+- `src/weapons.js` — five weapons and the weapon wheel
+- `src/garage.js` — car shop and tuning, saved
+- `src/race.js` — checkpoint street races with par times
+- `src/crew.js` — crew abilities, respect tiers, district standing
+- `src/sim.js` — the world: player, wanted, police, pedestrians, collisions
+- `src/missions.js` — the 12-mission story runner
+- `src/hud.js` — HUD, live minimap, garage panel
+- `src/effects.js` — particles, explosions, NOS flames, camera shake
+- `src/audio.js` — procedural WebAudio: engine, sirens, radio, gunshots
+- `src/save.js` — localStorage save / load
+- `src/shots.js` — `?shot=` scenes for the entry screenshots
+- `src/main.js` — entrypoint, frame loop, menu and key bindings
 
-## Gear and money
+`main.ts` (Node 22, standard library only) copies `game/` and `screenshots/`
+to `/output` and writes `/output/dossier.json` with the vendored make.fun
+library. Screenshots are real renders of this code in a browser.
 
-- **Verde Arms shop** (press E): VK-9 SMG $1,500, M12 Scattergun $2,500, ammo refills, body armor, first aid.
-- **Safehouse Garage** (press E): saves your game and restores health.
-- **Weapons:** P9 Pistol, VK-9 SMG, M12 Scattergun — magazines, reload with R, slots 1/2/3.
-- **Radio:** 3 synthesized stations — Verde FM, Neon Nights, Isla Beats (C to change).
-- **Hidden packages:** 10 across the city, $250 each.
-- **Day/night cycle:** the clock and lighting run a full day; neon and the helicopter searchlight come alive at night.
+## License
 
-## Controls
-
-WASD drive / walk · Shift nitro / run · Mouse aim · Click / F shoot · R reload · 1/2/3 weapons · C radio · E enter car / shop / safehouse · M next mission · Esc pause · Enter start.
-
-## Play it
-
-```sh
-node serve.ts
-# open http://localhost:8080
-```
-
-The game is static files under `game/` (Three.js vendored as `game/vendor/three.min.js`) with no build step and no network requests. `main.ts` hands it in: it copies `game/` and `screenshots/` to the output directory and writes `dossier.json` with the vendored make.fun library.
-
-## Files
-
-- `game/src/config.js` — tunables: districts, vehicles, weapons, wanted levels
-- `game/src/util.js` — math + seeded RNG
-- `game/src/city.js` — the island city generator
-- `game/src/missions.js` — the 12-mission story + crime helper
-- `game/src/sim.js` — the simulation: driving, police, helicopter, combat, economy
-- `game/src/render3d.js` — Three.js renderer, day/night lighting, chase camera
-- `game/src/hud.js` — HUD, minimap, shop, wanted stars, HELI warning
-- `game/src/input.js` — keyboard + mouse
-- `game/src/audio.js` — synthesized engine, radio, sirens, gunshots, fanfare
-- `game/src/effects.js` — particles and screen shake
-- `game/src/shots.js` — screenshot staging (menu / drive / chase / mission)
-- `game/src/save.js` — localStorage save / load
-- `game/src/main.js` — boot + game loop
+MIT — see `LICENSE`.

@@ -1,42 +1,56 @@
-// Save / load for VERDE BAY 3D v8. localStorage only; pure data in, pure data out.
-const KEY = 'verde-bay-save-v8';
+// VERDE BAY v9 — save and load: money, respect, missions done, garage, crew
+// and the player's position. Stored in localStorage under one key; a corrupt
+// or missing save starts a fresh game without an error.
+import { SAVE_KEY, PLAYER } from './config.js';
 
-function storage() {
+export function saveGame(sim) {
   try {
-    if (typeof localStorage !== 'undefined') return localStorage;
-  } catch (e) { /* sandbox without storage */ }
-  return null;
+    const data = {
+      version: 9,
+      money: Math.round(sim.money),
+      respect: sim.respect,
+      missionsDone: sim.missions ? sim.missions.completed : 0,
+      garage: sim.garage.state(),
+      crew: sim.crew.state(),
+      weaponsOwned: sim.weapons.owned,
+      weaponsAmmo: sim.weapons.ammo,
+      timeOfDay: sim.timeOfDay,
+      day: sim.day,
+      player: { x: sim.player.x, z: sim.player.z },
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) { return false; }
 }
 
-export function writeSave(S) {
-  const store = storage();
-  if (!store) return false;
-  const data = {
-    missionIndex: S.stats.missionsDone,
-    cash: Math.round(S.player.cash),
-    packagesFound: S.stats.packagesFound,
-    health: Math.round(S.player.health),
-    weapons: S.player.weapons.slice(),
-    ammo: S.player.ammo.slice(),
-    dayTime: S.dayTime,
-    savedAt: Date.now(),
-  };
-  try { store.setItem(KEY, JSON.stringify(data)); return true; } catch (e) { return false; }
-}
-
-export function loadSave() {
-  const store = storage();
-  if (!store) return null;
+export function loadGame(sim) {
   try {
-    const raw = store.getItem(KEY);
+    const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (typeof data.missionIndex !== 'number') return null;
+    if (!data || data.version !== 9) return null;
+    sim.money = data.money ?? PLAYER.startMoney;
+    sim.respect = data.respect ?? 0;
+    if (sim.missions) sim.missions.completed = data.missionsDone ?? 0;
+    sim.garage.loadState(data.garage);
+    sim.crew.loadState(data.crew);
+    if (Array.isArray(data.weaponsOwned)) sim.weapons.owned = data.weaponsOwned;
+    if (Array.isArray(data.weaponsAmmo)) sim.weapons.ammo = data.weaponsAmmo;
+    sim.timeOfDay = data.timeOfDay ?? 9.5;
+    sim.day = data.day ?? 1;
+    if (data.player) {
+      sim.player.x = data.player.x;
+      sim.player.z = data.player.z;
+      sim.player.mesh.position.set(data.player.x, 0, data.player.z);
+    }
     return data;
   } catch (e) { return null; }
 }
 
+export function hasSave() {
+  try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+}
+
 export function clearSave() {
-  const store = storage();
-  if (store) { try { store.removeItem(KEY); } catch (e) { /* ignore */ } }
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* no storage */ }
 }

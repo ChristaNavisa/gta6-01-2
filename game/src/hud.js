@@ -1,183 +1,217 @@
-// HUD for VERDE BAY 3D v8: DOM panels + a 2D minimap canvas. Reads the sim state
-// every frame; never mutates it (except the shop buttons, which call buyShopItem).
-import { WEAPONS, SHOP, RADIO_STATIONS } from './config.js';
-import { districtNameAt } from './city.js';
-import { fmtCash } from './util.js';
-import { buyShopItem } from './sim.js';
-import { MISSIONS } from './missions.js';
+// VERDE BAY v9 — the HUD: wanted stars, money, respect, health, speed, NOS
+// meter, weapon wheel, mission banner, garage panel, and the live canvas
+// minimap (player, police, mission marker, garage, shops, race rings).
+import { formatMoney, formatTime, clamp } from './util.js';
 
-let els = null;
-let minimap = null;
-let mctx = null;
-let shopBuilt = false;
-
-export function initHud(S) {
-  els = {
-    cash: document.getElementById('hud-cash'),
-    health: document.getElementById('hud-health'),
-    armor: document.getElementById('hud-armor'),
-    stars: document.getElementById('hud-stars'),
-    heli: document.getElementById('hud-heli'),
-    district: document.getElementById('hud-district'),
-    clock: document.getElementById('hud-clock'),
-    objective: document.getElementById('hud-objective'),
-    weapons: document.getElementById('hud-weapons'),
-    radio: document.getElementById('hud-radio'),
-    prompt: document.getElementById('hud-prompt'),
-    fanfare: document.getElementById('hud-fanfare'),
-    menu: document.getElementById('menu'),
-    shop: document.getElementById('shop'),
-    shopList: document.getElementById('shop-list'),
-    shopClose: document.getElementById('shop-close'),
-  };
-  minimap = document.getElementById('minimap');
-  if (minimap) mctx = minimap.getContext('2d');
-  if (els.shopClose) els.shopClose.addEventListener('click', () => { S.shop.open = false; });
-  buildShop(S);
-}
-
-function buildShop(S) {
-  if (shopBuilt || !els.shopList) return;
-  shopBuilt = true;
-  for (const [key, item] of Object.entries(SHOP)) {
-    const row = document.createElement('div');
-    row.className = 'shop-row';
-    const label = document.createElement('span');
-    label.textContent = `${item.label} — ${fmtCash(item.price)}`;
-    const btn = document.createElement('button');
-    btn.textContent = 'BUY';
-    btn.addEventListener('click', () => {
-      if (buyShopItem(S, key)) updateHud(S);
-    });
-    row.appendChild(label);
-    row.appendChild(btn);
-    els.shopList.appendChild(row);
+export class HUD {
+  constructor(sim) {
+    this.sim = sim;
+    this.el = {};
+    const ids = ['hud', 'stars', 'money', 'respect', 'health', 'speed', 'nos-fill',
+      'weapon', 'mission', 'message', 'minimap', 'wheel', 'garage', 'menu',
+      'objective', 'clock', 'district', 'race', 'start-screen', 'game-title'];
+    for (const id of ids) this.el[id] = document.getElementById(id);
+    this.minimap = this.el.minimap;
+    this.mm = this.minimap ? this.minimap.getContext('2d') : null;
+    this.wheelVisible = false;
   }
-}
-
-function starRow(level) {
-  let s = '';
-  for (let i = 1; i <= 5; i++) s += i <= level ? '★' : '☆';
-  return s;
-}
-
-function clockText(dayTime) {
-  const mins = Math.floor(dayTime * 24 * 60);
-  const h = Math.floor(mins / 60) % 24;
-  const m = mins % 60;
-  const hh = String(h).padStart(2, '0');
-  const mm = String(m).padStart(2, '0');
-  const night = dayTime > 0.75 || dayTime < 0.22;
-  return `${hh}:${mm} ${night ? '🌙 NIGHT' : '☀️ DAY'}`;
-}
-
-export function updateHud(S) {
-  if (!els) return;
-  const p = S.player;
-  els.cash.textContent = fmtCash(p.cash);
-  els.health.textContent = `HP ${Math.max(0, Math.round(p.health))}`;
-  els.health.style.color = p.health < 30 ? '#ff4444' : '#ffffff';
-  els.armor.textContent = p.armor > 0 ? `ARMOR ${Math.round(p.armor)}` : '';
-  els.stars.textContent = starRow(S.wanted.level);
-  els.stars.style.color = S.wanted.level >= 3 ? '#ff4444' : '#ffd700';
-  els.heli.style.display = S.heli ? 'block' : 'none';
-  els.heli.textContent = S.heli ? '🚁 HELI ON YOU — LOSE THE HEAT' : '';
-  els.district.textContent = districtNameAt(p.x, p.y);
-  els.clock.textContent = clockText(S.dayTime);
-  if (S.mission.active) {
-    const def = S.mission.def;
-    const stage = def.stages[S.mission.stage];
-    els.objective.textContent = `${def.title}  •  ${stage ? stage.text : ''}  •  ${fmtCash(def.reward)}`;
-  } else if (S.stats.missionsDone >= MISSIONS.length) {
-    els.objective.textContent = 'ALL 12 MISSIONS DONE — KING OF VERDE 👑';
-  } else {
-    const next = MISSIONS[S.mission.index];
-    els.objective.textContent = next ? `Next: ${next.title} — press M for the mission list` : '';
+  showStart() {
+    if (this.el['start-screen']) this.el['start-screen'].style.display = 'flex';
+    if (this.el.hud) this.el.hud.style.display = 'none';
   }
-  // Weapons.
-  let whtml = '';
-  WEAPONS.forEach((w, i) => {
-    if (!p.weapons[i]) return;
-    const cur = i === p.weapon ? '▶ ' : '';
-    whtml += `<span class="${i === p.weapon ? 'w-cur' : ''}">${cur}${i + 1} ${w.name} ${p.ammo[i]}/${p.reserve[i]}</span> `;
-  });
-  els.weapons.innerHTML = whtml;
-  els.radio.textContent = S.radio.on ? `📻 ${RADIO_STATIONS[S.radio.station]} (C)` : '📻 OFF (C)';
-  // Prompts.
-  let prompt = '';
-  if (S.shop.near && !S.shop.open) prompt = 'Press E — Verde Arms shop';
-  else if (S.safehouse.near) prompt = 'Press E — Safehouse: save + heal';
-  else if (!p.car) prompt = 'Press E near a car to drive';
-  els.prompt.textContent = prompt;
-  // Fanfare banner.
-  if (S.fanfare) {
-    els.fanfare.textContent = S.fanfare.text;
-    els.fanfare.style.display = 'block';
-  } else {
-    els.fanfare.style.display = 'none';
+  hideStart() {
+    if (this.el['start-screen']) this.el['start-screen'].style.display = 'none';
+    if (this.el.hud) this.el.hud.style.display = 'block';
   }
-  // Shop panel.
-  if (els.shop) els.shop.style.display = S.shop.open ? 'block' : 'none';
-  // Menu.
-  if (els.menu) els.menu.style.display = S.flags.menu ? 'flex' : 'none';
-  drawMinimap(S);
-}
-
-function drawMinimap(S) {
-  if (!mctx || !minimap) return;
-  const W = minimap.width, H = minimap.height;
-  const sx = W / 3400, sy = H / 2100;
-  mctx.clearRect(0, 0, W, H);
-  mctx.fillStyle = '#16222e';
-  mctx.fillRect(0, 0, W, H);
-  // Water channel.
-  mctx.fillStyle = '#2a6a8a';
-  mctx.fillRect(2600 * sx, 0, 300 * sx, 950 * sy);
-  // Roads.
-  mctx.strokeStyle = '#3a3a3a';
-  mctx.lineWidth = 2;
-  for (const r of S.city.roads) {
-    mctx.beginPath();
-    mctx.moveTo(r.x0 * sx, r.y0 * sy);
-    mctx.lineTo(r.x1 * sx, r.y1 * sy);
-    mctx.stroke();
-  }
-  // Mission target.
-  if (S.mission.active) {
-    const stage = S.mission.def.stages[S.mission.stage];
-    const place = stage && stage.target ? S.city.places[stage.target] : null;
-    if (place) {
-      mctx.fillStyle = '#ffd700';
-      mctx.beginPath();
-      mctx.arc(place.x * sx, place.y * sy, 5, 0, Math.PI * 2);
-      mctx.fill();
+  update() {
+    const sim = this.sim;
+    const p = sim.player;
+    if (this.el.stars) {
+      let stars = '';
+      for (let i = 0; i < 5; i++) stars += i < sim.wanted ? '★' : '☆';
+      this.el.stars.textContent = stars;
+      this.el.stars.className = 'stars' + (sim.wanted >= 3 ? ' hot' : '');
     }
+    if (this.el.money) this.el.money.textContent = formatMoney(sim.money);
+    if (this.el.respect) this.el.respect.textContent = 'RESPECT ' + sim.respect + '/100';
+    if (this.el.health) this.el.health.textContent = 'HP ' + Math.max(0, Math.round(p.health));
+    if (this.el.speed) {
+      const v = p.vehicle;
+      this.el.speed.textContent = v ? Math.round(Math.abs(v.speed) * 3.6) + ' km/h' : (p.moving ? 'ON FOOT' : '');
+    }
+    if (this.el['nos-fill'] && p.vehicle) {
+      const v = p.vehicle;
+      this.el['nos-fill'].style.width = (v.nos / v.nosMax * 100) + '%';
+      this.el['nos-fill'].style.background = v.nosInstalled ? '#39d5ff' : '#555';
+    }
+    if (this.el.weapon) this.el.weapon.textContent = sim.weapons.hudLine();
+    if (this.el.mission) this.el.mission.textContent = sim.missions ? sim.missions.statusLine() : '';
+    if (this.el.message) {
+      this.el.message.textContent = sim.messageTimer > 0 ? sim.message : '';
+    }
+    if (this.el.clock) {
+      const h = Math.floor(sim.timeOfDay);
+      const m = Math.floor((sim.timeOfDay - h) * 60);
+      this.el.clock.textContent = 'DAY ' + sim.day + '  ' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+    if (this.el.district) {
+      const d = sim.crew.districtName(sim.playerPos().x, sim.playerPos().z);
+      this.el.district.textContent = d.name.toUpperCase();
+    }
+    if (this.el.objective) {
+      const o = sim.objective;
+      if (o) {
+        const pp = sim.playerPos();
+        const d = Math.round(Math.hypot(pp.x - o.x, pp.z - o.z));
+        this.el.objective.textContent = '◆ ' + o.label + ' — ' + d + 'm';
+      } else this.el.objective.textContent = '';
+    }
+    if (this.el.race) {
+      const line = sim.race && sim.race.active ? sim.race.hudLine() : null;
+      this.el.race.textContent = line ? line.label + '  ' + line.time : '';
+    }
+    this.drawMinimap();
+    if (this.wheelVisible) this.renderWheel();
   }
-  // Packages.
-  mctx.fillStyle = '#22d3ee';
-  for (const pkg of S.packages) {
-    if (pkg.found) continue;
-    mctx.fillRect(pkg.x * sx - 2, pkg.y * sy - 2, 4, 4);
+  drawMinimap() {
+    if (!this.mm) return;
+    const sim = this.sim;
+    const S = 168;
+    const half = sim.city.half + 10;
+    const toMap = (x, z) => [((x + half) / (half * 2)) * S, ((z + half) / (half * 2)) * S];
+    const g = this.mm;
+    g.clearRect(0, 0, S, S);
+    g.fillStyle = '#0d1b26';
+    g.fillRect(0, 0, S, S);
+    // Water + land.
+    g.fillStyle = '#2f7fb8';
+    g.fillRect(0, 0, S, S);
+    g.fillStyle = '#3a3f46';
+    const [lx, ly] = toMap(-210, -210);
+    g.fillRect(lx, ly, S - 2 * lx, S - 2 * ly);
+    // Roads.
+    g.strokeStyle = '#5a6068';
+    g.lineWidth = 2;
+    for (const line of sim.city.roadLines) {
+      const [x1, y1] = toMap(line, -210);
+      const [x2, y2] = toMap(line, 210);
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+      const [x3, y3] = toMap(-210, line);
+      const [x4, y4] = toMap(210, line);
+      g.beginPath(); g.moveTo(x3, y3); g.lineTo(x4, y4); g.stroke();
+    }
+    // Garage (green wrench square), shops (white dots).
+    const [gx, gy] = toMap(sim.city.garagePos.x, sim.city.garagePos.z);
+    g.fillStyle = '#39d353';
+    g.fillRect(gx - 4, gy - 4, 8, 8);
+    g.fillStyle = '#ffffff';
+    for (const [sx, sz] of sim.city.shopPositions) {
+      const [mx, my] = toMap(sx, sz);
+      g.fillRect(mx - 2, my - 2, 4, 4);
+    }
+    // Race checkpoints.
+    if (sim.race && sim.race.active) {
+      g.fillStyle = '#ffe14d';
+      sim.race.checkpoints.forEach((cp, i) => {
+        const [mx, my] = toMap(cp.x, cp.z);
+        g.beginPath(); g.arc(mx, my, i === sim.race.index ? 5 : 3, 0, Math.PI * 2); g.fill();
+      });
+    }
+    // Mission objective (yellow diamond).
+    if (sim.objective) {
+      const [mx, my] = toMap(sim.objective.x, sim.objective.z);
+      g.fillStyle = '#ffe14d';
+      g.save();
+      g.translate(mx, my); g.rotate(Math.PI / 4);
+      g.fillRect(-4, -4, 8, 8);
+      g.restore();
+    }
+    // Police (red dots).
+    g.fillStyle = '#ff3b30';
+    for (const car of sim.policeCars) {
+      const [mx, my] = toMap(car.x, car.z);
+      g.beginPath(); g.arc(mx, my, 3.5, 0, Math.PI * 2); g.fill();
+    }
+    // Player (white arrow, rotated to heading).
+    const pp = sim.playerPos();
+    const [px, py] = toMap(pp.x, pp.z);
+    const heading = sim.player.vehicle ? sim.player.vehicle.heading : sim.player.heading;
+    g.save();
+    g.translate(px, py);
+    g.rotate(Math.atan2(Math.sin(heading), Math.cos(heading)));
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.moveTo(0, -7); g.lineTo(5, 5); g.lineTo(-5, 5); g.closePath(); g.fill();
+    g.restore();
+    // North tick.
+    g.fillStyle = '#ffffff';
+    g.font = 'bold 10px monospace';
+    g.fillText('N', S / 2 - 3, 11);
   }
-  // Cops (red), heli (orange), military (dark red).
-  mctx.fillStyle = '#ff4444';
-  for (const c of S.cops) mctx.fillRect(c.x * sx - 2, c.y * sy - 2, 4, 4);
-  if (S.heli) {
-    mctx.fillStyle = '#ff8800';
-    mctx.beginPath();
-    mctx.arc(S.heli.x * sx, S.heli.y * sy, 5, 0, Math.PI * 2);
-    mctx.fill();
+  openWheel() {
+    this.wheelVisible = true;
+    if (this.el.wheel) this.el.wheel.style.display = 'block';
+    this.renderWheel();
   }
-  mctx.fillStyle = '#aa0000';
-  for (const j of S.military) mctx.fillRect(j.x * sx - 2, j.y * sy - 2, 5, 5);
-  // Player (white arrow).
-  const p = S.player;
-  mctx.fillStyle = '#ffffff';
-  mctx.save();
-  mctx.translate(p.x * sx, p.y * sy);
-  mctx.rotate(p.angle);
-  mctx.beginPath();
-  mctx.moveTo(6, 0); mctx.lineTo(-4, -4); mctx.lineTo(-4, 4); mctx.closePath();
-  mctx.fill();
-  mctx.restore();
+  closeWheel() {
+    this.wheelVisible = false;
+    if (this.el.wheel) this.el.wheel.style.display = 'none';
+  }
+  renderWheel() {
+    const items = this.sim.weapons.wheelItems();
+    if (!this.el.wheel) return;
+    this.el.wheel.innerHTML = '<div class="wheel-title">WEAPONS — 1-5 or click</div>' +
+      items.map((w) => '<div class="wheel-item' + (w.selected ? ' sel' : '') + (w.owned ? '' : ' locked') + '" data-slot="' + w.slot + '">' +
+        w.slot + ' · ' + w.name + ' · ' + (w.owned ? w.ammo + ' ammo' : 'LOCKED') + '</div>').join('');
+    this.el.wheel.querySelectorAll('.wheel-item').forEach((node) => {
+      node.addEventListener('click', () => {
+        this.sim.weapons.select(Number(node.dataset.slot) - 1);
+        this.closeWheel();
+      });
+    });
+  }
+  openGarage() {
+    const sim = this.sim;
+    const cat = sim.garage.catalog();
+    const panel = this.el.garage;
+    if (!panel) return;
+    const disc = sim.crew.shopDiscount();
+    panel.innerHTML = '<h2>VERDE GARAGE</h2><div class="garage-money">' + formatMoney(cat.money) +
+      (disc ? ' · 10% respect discount' : '') + '</div>' +
+      '<h3>Cars</h3>' + cat.cars.map((c) => '<div class="shop-row"><span>' + c.name + ' · ' + Math.round(c.topSpeed * 3.6) + ' km/h</span>' +
+        (c.owned
+          ? '<button data-car="' + c.id + '">' + (c.active ? 'ACTIVE' : 'SELECT') + '</button>'
+          : '<button data-car="' + c.id + '">' + formatMoney(c.price * (1 - disc)) + '</button>') + '</div>').join('') +
+      '<h3>Upgrades — ' + sim.garage.carDef(sim.garage.selectedCar).name + '</h3>' + cat.upgrades.map((u) => '<div class="shop-row"><span>' + u.name + ' · ' + u.effect + '</span>' +
+        '<button data-up="' + u.id + '"' + (u.owned || u.locked ? ' disabled' : '') + '>' +
+        (u.owned ? 'FITTED' : u.locked ? 'NEEDS RESPECT' : formatMoney(u.price)) + '</button></div>').join('') +
+      '<div class="shop-row"><button id="garage-close">LEAVE (E)</button><button id="garage-spawn">TAKE CAR OUT</button></div>';
+    panel.style.display = 'block';
+    panel.querySelectorAll('[data-car]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.car;
+      const res = sim.garage.ownedCars.includes(id) ? (sim.garage.selectCar(id), { ok: true, message: 'Selected ' + sim.garage.carDef(id).name }) : sim.garage.buyCar(id);
+      sim.say(res.message || res.reason);
+      this.openGarage();
+    }));
+    panel.querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', () => {
+      const res = sim.garage.buyUpgrade(b.dataset.up);
+      sim.say(res.message || res.reason);
+      this.openGarage();
+    }));
+    const close = panel.querySelector('#garage-close');
+    if (close) close.addEventListener('click', () => this.closeGarage());
+    const spawn = panel.querySelector('#garage-spawn');
+    if (spawn) spawn.addEventListener('click', () => {
+      this.closeGarage();
+      const car = sim.garage.spawnActiveCar(sim.scene, sim.vehicleClass);
+      sim.vehicles.push(car);
+      sim.enterVehicle(car);
+    });
+  }
+  closeGarage() {
+    if (this.el.garage) this.el.garage.style.display = 'none';
+    this.sim.garage.open = false;
+  }
+  static clamp01(v) { return clamp(v, 0, 1); }
+  static formatClock(t) { return formatTime(t); }
 }
